@@ -1,54 +1,43 @@
-# React + TypeScript + Vite
+# 💧 Sistema de Monitoramento de Perdas de Água
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Este projeto é uma aplicação **frontend** desenvolvida com **React.js** e **TypeScript**, com o objetivo de fornecer uma interface intuitiva para que funcionários de uma empresa de distribuição de água possam **visualizar perdas hídricas** e gerar **relatórios mensais e anuais**. A aplicação visa apoiar o controle e redução de desperdícios, contribuindo para uma gestão mais eficiente dos recursos.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Tecnologias Utilizadas
 
-## Expanding the ESLint configuration
+- **React.js** – Biblioteca principal para construção da interface
+- **TypeScript** – Superset do JavaScript que adiciona tipagem estática
+- **Tailwind CSS** – Estilização rápida e responsiva
+- **shadcn/ui** – Componentes UI prontos e acessíveis
+- **React Router** – Gerenciamento de rotas da aplicação
+- **Lucide Icons** – Ícones modernos e otimizados para web
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+## 📌 Funcionalidades
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+- 📊 Visualização de perdas de água por período
+- 📅 Geração de relatórios mensais e anuais
+- 📈 Gráficos e indicadores de desempenho
+- 🔍 Filtro de dados por período, setor ou região (em desenvolvimento)
+- 🧩 Interface modular com componentes reutilizáveis
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+---
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+## 🧪 Em Desenvolvimento
+
+Este projeto está em fase ativa de desenvolvimento. Algumas funcionalidades estão sendo implementadas e outras ainda serão adicionadas, como:
+
+- Exportação de relatórios em PDF
+- Autenticação de usuários
+- Dashboard com KPIs customizáveis
+
+---
+
+## ▶️ Como Executar o Projeto
+
+1. Clone o repositório:
+
+```bash
+git clone https://github.com/FSPNathaly/Squad17-Compesa.git
