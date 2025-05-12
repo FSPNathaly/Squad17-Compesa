@@ -28,7 +28,6 @@ import {
 } from "lucide-react";
 
 export const Planilha = () => {
-  // Dados extraídos do CSV
   const dadosMunicipios = [
     {
       id: 1,
@@ -140,10 +139,8 @@ export const Planilha = () => {
       coordenacao: "",
       contato: "",
     },
-    // Adicione mais municípios conforme necessário
   ];
 
-  // Dados totais
   const totalVD = "3.438.878,48";
   const totalPerda = "3.018.221,48";
   const ipdMedio = "87,77%";
@@ -151,7 +148,6 @@ export const Planilha = () => {
 
   return (
     <div className="min-h-screen bg-muted/40 p-6">
-      {/* Cabeçalho melhorado */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div className="flex items-center gap-4">
           <a href="/dashboard">
@@ -198,7 +194,6 @@ export const Planilha = () => {
         </div>
       </header>
 
-      {/* Resumo Geral */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -248,7 +243,6 @@ export const Planilha = () => {
         </Card>
       </div>
 
-      {/* Barra de Filtros */}
       <div className="flex flex-col md:flex-row gap-2 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -302,7 +296,6 @@ export const Planilha = () => {
         </Button>
       </div>
 
-      {/* Tabela de Dados */}
       <div className="rounded-md border border-gray-200 bg-white shadow-sm">
         <Table>
           <TableHeader className="bg-gray-50">
@@ -396,7 +389,6 @@ export const Planilha = () => {
         </Table>
       </div>
 
-      {/* Paginação */}
       <div className="flex flex-col md:flex-row items-center justify-between px-2 mt-4 gap-4">
         <div className="text-sm text-muted-foreground">
           Mostrando <span className="font-medium text-gray-700">1</span> a{" "}
