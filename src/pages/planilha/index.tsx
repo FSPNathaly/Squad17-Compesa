@@ -73,6 +73,14 @@ interface ReportData {
 }
 
 export const Planilha = () => {
+  const compesaColors = {
+    primary: '#003F9C',
+    secondary: '#5D8BF4',
+    tertiary: '#85A6F2',
+    background: '#F0F5FF',
+    text: '#1A2C56'
+  };
+
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [filter, setFilter] = useState("all");
@@ -92,14 +100,6 @@ export const Planilha = () => {
   const [editingReport, setEditingReport] = useState<string | null>(null);
   const [newMonth, setNewMonth] = useState("");
   const [newYear, setNewYear] = useState("");
-
-  const compesaColors = {
-    primary: '#003F9C',
-    secondary: '#5D8BF4',
-    tertiary: '#85A6F2',
-    background: '#F0F5FF',
-    text: '#1A2C56'
-  };
 
   useEffect(() => {
     const loadedReports = localStorage.getItem('compesaReports');
@@ -485,7 +485,7 @@ export const Planilha = () => {
   }, [searchTerm, filter]);
 
   return (
-    <div className="min-h-screen bg-[#F0F5FF] p-6">
+    <div className={`min-h-screen bg-[${compesaColors.background}] p-6`}>
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 bg-white p-4 rounded-lg shadow-sm">
         <div className="flex items-center gap-4">
           <a href="/dashboard">
@@ -496,7 +496,7 @@ export const Planilha = () => {
             />
           </a>
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold text-[#1A2C56]">
+            <h2 className={`text-xl font-semibold text-[${compesaColors.text}]`}>
               Análise de VD e Perdas Negativas
             </h2>
             <p className="text-sm text-muted-foreground">
@@ -510,7 +510,7 @@ export const Planilha = () => {
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
-                className="gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10"
+                className={`gap-2 border-[${compesaColors.primary}] text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10`}
               >
                 <Calendar className="h-4 w-4" />
                 {date ? format(date, "MMM yyyy", { locale: ptBR }) : "Selecione o período"}
@@ -532,7 +532,7 @@ export const Planilha = () => {
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="outline"
-                  className="gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10"
+                  className={`gap-2 border-[${compesaColors.primary}] text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10`}
                 >
                   <Calendar className="h-4 w-4" />
                   Relatórios Salvos
@@ -547,7 +547,7 @@ export const Planilha = () => {
                   return (
                     <div key={reportKey} className="relative group">
                       <DropdownMenuItem
-                        className={`cursor-pointer ${selectedReport === reportKey ? 'bg-[#003F9C]/10' : ''}`}
+                        className={`cursor-pointer ${selectedReport === reportKey ? `bg-[${compesaColors.primary}]/10` : ''}`}
                         onClick={() => loadSavedReport(reportKey)}
                       >
                         {`${report.month}/${report.year} (${report.data.length} registros)`}
@@ -556,7 +556,7 @@ export const Planilha = () => {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-6 w-6 text-[#003F9C] hover:bg-[#003F9C]/10"
+                          className={`h-6 w-6 text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10`}
                           onClick={(e) => {
                             e.stopPropagation();
                             startEditingReport(reportKey);
@@ -593,7 +593,7 @@ export const Planilha = () => {
           />
           <Button 
             variant="outline" 
-            className="gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10"
+            className={`gap-2 border-[${compesaColors.primary}] text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10`}
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="h-4 w-4" />
@@ -604,7 +604,7 @@ export const Planilha = () => {
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="outline" 
-                className="gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10" 
+                className={`gap-2 border-[${compesaColors.primary}] text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10`} 
                 disabled={dadosMunicipios.length === 0}
               >
                 <Download className="h-4 w-4" />
@@ -615,13 +615,13 @@ export const Planilha = () => {
             <DropdownMenuContent className="w-48">
               <DropdownMenuItem 
                 onClick={handleExport} 
-                className="cursor-pointer focus:bg-[#003F9C]/10"
+                className={`cursor-pointer focus:bg-[${compesaColors.primary}]/10`}
               >
                 Exportar como CSV
               </DropdownMenuItem>
               <DropdownMenuItem 
                 onClick={generatePDFReport} 
-                className="cursor-pointer focus:bg-[#003F9C]/10"
+                className={`cursor-pointer focus:bg-[${compesaColors.primary}]/10`}
               >
                 Exportar como PDF
               </DropdownMenuItem>
@@ -634,12 +634,12 @@ export const Planilha = () => {
                 variant="ghost"
                 className="relative h-10 w-10 rounded-full"
               >
-                <Avatar className="w-10 h-10 border-2 border-[#85A6F2]">
+                <Avatar className="w-10 h-10 border-2 border-[${compesaColors.tertiary}]">
                   <AvatarImage
                     src="https://github.com/shadcn.png"
                     alt="User Avatar"
                   />
-                  <AvatarFallback className="bg-[#85A6F2] text-white font-medium">US</AvatarFallback>
+                  <AvatarFallback className={`bg-[${compesaColors.tertiary}] text-white font-medium`}>US</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
@@ -688,7 +688,7 @@ export const Planilha = () => {
                 Cancelar
               </Button>
               <Button
-                className="bg-[#003F9C] hover:bg-[#003F9C]/90"
+                className={`bg-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/90`}
                 onClick={saveEditedReport}
               >
                 Salvar
@@ -699,13 +699,13 @@ export const Planilha = () => {
       )}
 
       {fileName && (
-        <div className="flex justify-between items-center mb-4 bg-[#85A6F2]/20 p-3 rounded-lg">
-          <span className="text-sm text-[#003F9C]">{fileName}</span>
+        <div className={`flex justify-between items-center mb-4 bg-[${compesaColors.tertiary}]/20 p-3 rounded-lg`}>
+          <span className={`text-sm text-[${compesaColors.primary}]`}>{fileName}</span>
           <Button 
             variant="ghost" 
             size="sm" 
             onClick={handleCancelImport}
-            className="text-[#003F9C] hover:bg-[#003F9C]/10 p-1"
+            className={`text-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/10 p-1`}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -713,51 +713,51 @@ export const Planilha = () => {
       )}
 
       {uploading && (
-        <div className="flex justify-center items-center mb-4 bg-[#85A6F2]/20 p-3 rounded-lg">
-          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#003F9C] mr-2"></div>
-          <span className="text-sm text-[#003F9C]">Processando arquivo...</span>
+        <div className={`flex justify-center items-center mb-4 bg-[${compesaColors.tertiary}]/20 p-3 rounded-lg`}>
+          <div className={`animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[${compesaColors.primary}] mr-2`}></div>
+          <span className={`text-sm text-[${compesaColors.primary}]`}>Processando arquivo...</span>
         </div>
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card className="bg-white border-0 shadow-sm">
           <CardHeader className="border-b p-4">
-            <CardTitle className="text-sm font-medium text-[#003F9C]">
+            <CardTitle className={`text-sm font-medium text-[${compesaColors.primary}]`}>
               Total VD
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-[#1A2C56]">{totalVD}</div>
+            <div className={`text-2xl font-bold text-[${compesaColors.text}]`}>{totalVD}</div>
           </CardContent>
         </Card>
         <Card className="bg-white border-0 shadow-sm">
           <CardHeader className="border-b p-4">
-            <CardTitle className="text-sm font-medium text-[#003F9C]">
+            <CardTitle className={`text-sm font-medium text-[${compesaColors.primary}]`}>
               Total Perda
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-[#1A2C56]">{totalPerda}</div>
+            <div className={`text-2xl font-bold text-[${compesaColors.text}]`}>{totalPerda}</div>
           </CardContent>
         </Card>
         <Card className="bg-white border-0 shadow-sm">
           <CardHeader className="border-b p-4">
-            <CardTitle className="text-sm font-medium text-[#003F9C]">
+            <CardTitle className={`text-sm font-medium text-[${compesaColors.primary}]`}>
               IPD Médio
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-[#1A2C56]">{ipdMedio}</div>
+            <div className={`text-2xl font-bold text-[${compesaColors.text}]`}>{ipdMedio}</div>
           </CardContent>
         </Card>
         <Card className="bg-white border-0 shadow-sm">
           <CardHeader className="border-b p-4">
-            <CardTitle className="text-sm font-medium text-[#003F9C]">
+            <CardTitle className={`text-sm font-medium text-[${compesaColors.primary}]`}>
               Volume Produzido
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="text-2xl font-bold text-[#1A2C56]">
+            <div className={`text-2xl font-bold text-[${compesaColors.text}]`}>
               {volumeProduzido}
             </div>
           </CardContent>
@@ -846,14 +846,14 @@ export const Planilha = () => {
           <Table>
             <TableHeader className="bg-gray-50">
               <TableRow>
-                <TableHead className="w-[80px] text-[#003F9C] font-medium">
+                <TableHead className={`w-[80px] text-[${compesaColors.primary}] font-medium`}>
                   ID
                 </TableHead>
-                <TableHead className="text-[#003F9C] font-medium">
+                <TableHead className={`text-[${compesaColors.primary}] font-medium`}>
                   Municípios
                 </TableHead>
                 <TableHead 
-                  className="text-right text-[#003F9C] font-medium cursor-pointer"
+                  className={`text-right text-[${compesaColors.primary}] font-medium cursor-pointer`}
                   onClick={() => handleSort("VD")}
                 >
                   <div className="flex items-center justify-end gap-1">
@@ -866,7 +866,7 @@ export const Planilha = () => {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="text-right text-[#003F9C] font-medium cursor-pointer"
+                  className={`text-right text-[${compesaColors.primary}] font-medium cursor-pointer`}
                   onClick={() => handleSort("Perda")}
                 >
                   <div className="flex items-center justify-end gap-1">
@@ -879,7 +879,7 @@ export const Planilha = () => {
                   </div>
                 </TableHead>
                 <TableHead 
-                  className="text-right text-[#003F9C] font-medium cursor-pointer"
+                  className={`text-right text-[${compesaColors.primary}] font-medium cursor-pointer`}
                   onClick={() => handleSort("IPD")}
                 >
                   <div className="flex items-center justify-end gap-1">
@@ -891,22 +891,22 @@ export const Planilha = () => {
                     )}
                   </div>
                 </TableHead>
-                <TableHead className="text-right text-[#003F9C] font-medium">
+                <TableHead className={`text-right text-[${compesaColors.primary}] font-medium`}>
                   Volume Disp.
                 </TableHead>
-                <TableHead className="text-right text-[#003F9C] font-medium">
+                <TableHead className={`text-right text-[${compesaColors.primary}] font-medium`}>
                   Rateio
                 </TableHead>
-                <TableHead className="text-right text-[#003F9C] font-medium">
+                <TableHead className={`text-right text-[${compesaColors.primary}] font-medium`}>
                   Volume Prod.
                 </TableHead>
-                <TableHead className="text-right text-[#003F9C] font-medium">
+                <TableHead className={`text-right text-[${compesaColors.primary}] font-medium`}>
                   Ligações
                 </TableHead>
-                <TableHead className="text-[#003F9C] font-medium">
+                <TableHead className={`text-[${compesaColors.primary}] font-medium`}>
                   Diretoria
                 </TableHead>
-                <TableHead className="text-[#003F9C] font-medium">
+                <TableHead className={`text-[${compesaColors.primary}] font-medium`}>
                   Gerência
                 </TableHead>
               </TableRow>
@@ -914,17 +914,17 @@ export const Planilha = () => {
             <TableBody>
               {paginatedData.map((municipio) => (
                 <TableRow key={municipio.Id} className="hover:bg-gray-50">
-                  <TableCell className="font-medium text-[#1A2C56]">
+                  <TableCell className={`font-medium text-[${compesaColors.text}]`}>
                     {municipio.Id}
                   </TableCell>
-                  <TableCell className="text-[#1A2C56]">
+                  <TableCell className={`text-[${compesaColors.text}]`}>
                     {municipio.Municipios}
                   </TableCell>
                   <TableCell
                     className={`text-right ${
                       municipio.VD?.startsWith("-")
                         ? "text-red-500 font-medium"
-                        : "text-[#1A2C56]"
+                        : `text-[${compesaColors.text}]`
                     }`}
                   >
                     {municipio.VD}
@@ -933,30 +933,30 @@ export const Planilha = () => {
                     className={`text-right ${
                       municipio.Perda?.startsWith("-")
                         ? "text-red-500 font-medium"
-                        : "text-[#1A2C56]"
+                        : `text-[${compesaColors.text}]`
                     }`}
                   >
                     {municipio.Perda}
                   </TableCell>
-                  <TableCell className="text-right text-[#1A2C56]">
+                  <TableCell className={`text-right text-[${compesaColors.text}]`}>
                     {municipio.IPD}
                   </TableCell>
-                  <TableCell className="text-right text-[#1A2C56]">
+                  <TableCell className={`text-right text-[${compesaColors.text}]`}>
                     {municipio.Volume_Disponibilizado}
                   </TableCell>
-                  <TableCell className="text-right text-[#1A2C56]">
+                  <TableCell className={`text-right text-[${compesaColors.text}]`}>
                     {municipio.Rateio}
                   </TableCell>
-                  <TableCell className="text-right text-[#1A2C56]">
+                  <TableCell className={`text-right text-[${compesaColors.text}]`}>
                     {municipio.Volume_Produzido}
                   </TableCell>
-                  <TableCell className="text-right text-[#1A2C56]">
+                  <TableCell className={`text-right text-[${compesaColors.text}]`}>
                     {municipio.Ligacoes_Ativas}
                   </TableCell>
-                  <TableCell className="text-[#1A2C56]">
+                  <TableCell className={`text-[${compesaColors.text}]`}>
                     {municipio.Diretoria}
                   </TableCell>
-                  <TableCell className="text-[#1A2C56]">
+                  <TableCell className={`text-[${compesaColors.text}]`}>
                     {municipio.Gerencia}
                   </TableCell>
                 </TableRow>
@@ -967,7 +967,7 @@ export const Planilha = () => {
       ) : (
         <div className="flex flex-col items-center justify-center p-12 bg-white border-0 rounded-md shadow-sm">
           <div className="text-center space-y-4">
-            <p className="text-lg text-[#1A2C56]">Nenhum dado carregado</p>
+            <p className={`text-lg text-[${compesaColors.text}]`}>Nenhum dado carregado</p>
             <p className="text-sm text-gray-500">Importe um arquivo CSV para visualizar os dados</p>
             <input
               type="file"
@@ -976,7 +976,7 @@ export const Planilha = () => {
               onChange={handleFileUpload}
               className="hidden"
             />
-            <Button asChild className="bg-[#003F9C] hover:bg-[#003F9C]/90">
+            <Button asChild className={`bg-[${compesaColors.primary}] hover:bg-[${compesaColors.primary}]/90`}>
               <label htmlFor="csvUploadEmpty" className="cursor-pointer">
                 Importar CSV
               </label>
@@ -988,9 +988,9 @@ export const Planilha = () => {
       {dadosMunicipios.length > 0 && (
         <div className="flex flex-col md:flex-row items-center justify-between px-2 mt-4 gap-4">
           <div className="text-sm text-muted-foreground">
-            Mostrando <span className="font-medium text-[#1A2C56]">{(currentPage - 1) * itemsPerPage + 1}</span> a{" "}
-            <span className="font-medium text-[#1A2C56]">{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> de{" "}
-            <span className="font-medium text-[#1A2C56]">{filteredData.length}</span> resultados
+            Mostrando <span className={`font-medium text-[${compesaColors.text}]`}>{(currentPage - 1) * itemsPerPage + 1}</span> a{" "}
+            <span className={`font-medium text-[${compesaColors.text}]`}>{Math.min(currentPage * itemsPerPage, filteredData.length)}</span> de{" "}
+            <span className={`font-medium text-[${compesaColors.text}]`}>{filteredData.length}</span> resultados
           </div>
           <div className="flex gap-1">
             <Button 
@@ -1007,7 +1007,7 @@ export const Planilha = () => {
                 key={page}
                 variant="outline"
                 size="sm"
-                className={`border-gray-300 ${currentPage === page ? "bg-[#003F9C]/10 text-[#003F9C]" : ""}`}
+                className={`border-gray-300 ${currentPage === page ? `bg-[${compesaColors.primary}]/10 text-[${compesaColors.primary}]` : ""}`}
                 onClick={() => setCurrentPage(page)}
               >
                 {page}
