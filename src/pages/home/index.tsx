@@ -1,43 +1,110 @@
-import compesaLogo from "/compesaLogo.png";
+import { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Lock, Mail, AlertCircle } from "lucide-react";
+import { useNavigate } from 'react-router-dom';
 
 export const Home = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!email.endsWith('@compesa.com.br')) {
+      setError("Use seu email corporativo @compesa.com.br");
+      return;
+    }
+
+    setLoading(true);
+    
+    setTimeout(() => {
+      setLoading(false);
+      navigate("/dashboard");
+    }, 1000);
+  };
+
   return (
-    <main className="flex items-center justify-center min-h-screen bg-blue-800">
-      <form className="bg-white rounded-3xl shadow-xl p-8 h-[600px] w-full max-w-[500px] flex flex-col items-center gap-4">
-        <img
-          src={compesaLogo}
-          alt="Logo da Compesa"
-          className="w-full object-contain mb-2"
-        />
+    <div className="min-h-screen bg-muted/40 flex items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <Card className="p-8 shadow-lg">
+          <div className="flex flex-col items-center mb-8">
+            <img
+              src="https://servicos.compesa.com.br/wp-content/uploads/2022/07/compesa-h.png"
+              alt="Compesa Logo"
+              className="h-12 mb-4"
+            />
+          </div>
 
-        <input
-          type="text"
-          placeholder="Usuário"
-          className="w-full px-4 py-2 border-2 border-blue-800 rounded-md text-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-600"
-        />
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-md flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              <span>{error}</span>
+            </div>
+          )}
 
-        <input
-          type="password"
-          placeholder="Senha"
-          className="w-full px-4 py-2 border-2 border-blue-800 rounded-md text-blue-800 focus:outline-none focus:ring-1 focus:ring-blue-600"
-        />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="email"
+                  placeholder="seu.email@compesa.com.br"
+                  className="pl-10"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
 
-        <div className="flex items-center w-full text-sm text-blue-800 justify-center">
-          <input
-            type="checkbox"
-            id="conectado"
-            className="accent-blue-800 mr-2"
-          />
-          <label htmlFor="conectado">Manter-me conectado</label>
-        </div>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="password"
+                  placeholder="Senha"
+                  className="pl-10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+            </div>
 
-        <button
-          type="submit"
-          className="mt-2 w-full bg-blue-700 text-white py-2 rounded-md hover:bg-blue-900 transition"
-        >
-          Entrar
-        </button>
-      </form>
-    </main>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="remember"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
+                Lembrar meu acesso
+              </label>
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
+                  <span>Acessando...</span>
+                </div>
+              ) : (
+                "Acessar Sistema"
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            © {new Date().getFullYear()} Compesa
+          </div>
+        </Card>
+      </div>
+    </div>
   );
 };
