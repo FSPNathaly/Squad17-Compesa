@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { format, subDays, subYears } from "date-fns";
+import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { parse } from "papaparse";
 import {
@@ -16,6 +16,8 @@ import {
   Bar,
   Pie,
   Line,
+  ComposedChart,
+  Area,
 } from "recharts";
 import {
   Card,
@@ -58,6 +60,34 @@ import {
   X,
 } from "lucide-react";
 
+interface MunicipalityData {
+  name: string;
+  distributed: number;
+  consumed: number;
+  loss: number;
+  lossPercentage: number;
+  status: "Crítico" | "Alerta" | "Estável";
+  region: string;
+  history: {
+    month: string;
+    distributed: number;
+    consumed: number;
+    loss: number;
+  }[];
+}
+
+interface TrendData {
+  month: string;
+  distributed: number;
+  consumed: number;
+  loss: number;
+}
+
+interface DistributionData {
+  name: string;
+  value: number;
+}
+
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 
 export const Dashboard = () => {
@@ -70,51 +100,11 @@ export const Dashboard = () => {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importFiles, setImportFiles] = useState<File[]>([]);
   const [filterText, setFilterText] = useState("");
-  const [municipalData, setMunicipalData] = useState<any[]>([]);
-  const [heatmapData, setHeatmapData] = useState<any[]>([]);
-  const [trendData, setTrendData] = useState<any[]>([]);
-  const [distributionData, setDistributionData] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (municipalData.length === 0) {
-      resetToMockData();
-    }
-  }, []);
-
-  const resetToMockData = () => {
-    const mockMunicipalData = [
-      { name: "Recife", loss: 25, volume: 320000, status: "Crítico" },
-      { name: "Jaboatão", loss: 18, volume: 280000, status: "Crítico" },
-      { name: "Olinda", loss: 15, volume: 240000, status: "Alerta" },
-      { name: "Paulista", loss: 12, volume: 180000, status: "Alerta" },
-      { name: "Camaragibe", loss: 8, volume: 120000, status: "Estável" },
-    ];
-
-    const mockHeatmapData = [
-      { region: "Metropolitana", month: "Jan", loss: 15 },
-      { region: "Metropolitana", month: "Fev", loss: 18 },
-      { region: "Agreste", month: "Jan", loss: 8 },
-      { region: "Agreste", month: "Fev", loss: 10 },
-    ];
-
-    const mockTrendData = [
-      { month: "Jan", actual: 1200000, target: 1000000 },
-      { month: "Fev", actual: 1350000, target: 1050000 },
-    ];
-
-    const mockDistributionData = [
-      { name: "0-10%", value: 35 },
-      { name: "10-20%", value: 25 },
-      { name: "20-30%", value: 20 },
-    ];
-
-    setMunicipalData(mockMunicipalData);
-    setHeatmapData(mockHeatmapData);
-    setTrendData(mockTrendData);
-    setDistributionData(mockDistributionData);
-  };
+  const [municipalData, setMunicipalData] = useState<MunicipalityData[]>([]);
+  const [trendData, setTrendData] = useState<TrendData[]>([]);
+  const [distributionData, setDistributionData] = useState<DistributionData[]>([]);
 
   const handleDateRangeSelect = (range: "30" | "60" | "90" | "custom") => {
     if (range === "custom") return;
@@ -126,75 +116,173 @@ export const Dashboard = () => {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImportFile(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    const newFiles = Array.from(files).filter(file => 
+      file.type === "text/csv" || file.name.endsWith(".csv")
+    );
+    
+    setImportFiles(prev => [...prev, ...newFiles]);
   };
 
-  const processImport = () => {
-    if (!importFile) return;
+  const processImport = async () => {
+    if (importFiles.length === 0) return;
 
     setIsImporting(true);
     setImportProgress(0);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    let allData: MunicipalityData[] = [];
+    let processedFiles = 0;
+
+    for (const file of importFiles) {
       try {
-        const csvData = e.target?.result as string;
-        parse(csvData, {
-          header: true,
-          complete: (results) => {
-            processData(results.data);
-            setImportProgress(100);
-            setIsImporting(false);
-          },
-          error: (error) => {
-            console.error("Error parsing CSV:", error);
-            setIsImporting(false);
-          }
-        });
+        const data = await parseCSVFile(file);
+        const processed = processData(data);
+        allData = mergeData(allData, processed);
+        processedFiles++;
+        setImportProgress(Math.round((processedFiles / importFiles.length) * 100));
       } catch (error) {
-        console.error("Error processing file:", error);
-        setIsImporting(false);
+        console.error(`Error processing file ${file.name}:`, error);
       }
-    };
+    }
 
-    reader.onprogress = (e) => {
-      if (e.lengthComputable) {
-        setImportProgress(Math.round((e.loaded / e.total) * 100));
-      }
-    };
-
-    reader.readAsText(importFile);
+    setMunicipalData(allData);
+    updateVisualizations(allData);
+    setIsImporting(false);
+    setImportFiles([]);
   };
 
-  const processData = (rawData: any[]) => {
-    const filteredData = rawData.filter(item => item.Municipios && item.IPD);
-    
-    const municipalData = filteredData.map(item => ({
-      name: item.Municipios,
-      loss: parseFloat(item.IPD.replace("%", "").replace(",", ".")),
-      volume: item.VD ? parseInt(item.VD.replace(/\./g, "").replace(",", ".")) : 0,
-      status: getStatus(parseFloat(item.IPD.replace("%", "").replace(",", ".")))
-    }));
+  const parseCSVFile = (file: File): Promise<any[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const csvData = e.target?.result as string;
+          parse(csvData, {
+            header: true,
+            complete: (results) => {
+              resolve(results.data);
+            },
+            error: (error) => {
+              reject(error);
+            }
+          });
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = () => {
+        reject(new Error("Failed to read file"));
+      };
+      reader.readAsText(file);
+    });
+  };
 
-    const heatmapData = filteredData.reduce((acc, item) => {
-      const region = getRegion(item.Municipios);
-      if (region) {
-        acc.push({
-          region,
-          month: "Jan",
-          loss: parseFloat(item.IPD.replace("%", "").replace(",", "."))
-        });
+  const processData = (rawData: any[]): MunicipalityData[] => {
+    const municipalityMap: Record<string, MunicipalityData> = {};
+
+    rawData.forEach(item => {
+      if (!item.Municipio) return;
+
+      const municipality = item.Municipio.trim();
+      const month = item.Mes || "Jan";
+      const distributed = parseFloat(item["Volume Distribuído"]?.replace(",", ".") || 0);
+      const consumed = parseFloat(item["Volume Consumido"]?.replace(",", ".") || 0);
+      const loss = parseFloat(item["Volume Perdido"]?.replace(",", ".") || 0);
+      const lossPercentage = parseFloat(item["Perda (%)"]?.replace("%", "").replace(",", ".") || 0);
+
+      if (!municipalityMap[municipality]) {
+        municipalityMap[municipality] = {
+          name: municipality,
+          distributed,
+          consumed,
+          loss,
+          lossPercentage,
+          status: getStatus(lossPercentage),
+          region: getRegion(municipality),
+          history: []
+        };
       }
-      return acc;
-    }, []);
 
-    const trendData = [
-      { month: "Jan", actual: municipalData.reduce((sum, m) => sum + m.loss, 0) / municipalData.length },
-      { month: "Fev", actual: municipalData.reduce((sum, m) => sum + m.loss, 0) / municipalData.length * 1.1 }
-    ];
+      municipalityMap[municipality].history.push({
+        month,
+        distributed,
+        consumed,
+        loss
+      });
 
+      municipalityMap[municipality].distributed += distributed;
+      municipalityMap[municipality].consumed += consumed;
+      municipalityMap[municipality].loss += loss;
+      municipalityMap[municipality].lossPercentage = lossPercentage;
+      municipalityMap[municipality].status = getStatus(lossPercentage);
+    });
+
+    return Object.values(municipalityMap);
+  };
+
+  const mergeData = (existingData: MunicipalityData[], newData: MunicipalityData[]): MunicipalityData[] => {
+    const mergedData = [...existingData];
+    
+    newData.forEach(newItem => {
+      const existingIndex = mergedData.findIndex(item => item.name === newItem.name);
+      
+      if (existingIndex >= 0) {
+        mergedData[existingIndex] = {
+          ...mergedData[existingIndex],
+          distributed: mergedData[existingIndex].distributed + newItem.distributed,
+          consumed: mergedData[existingIndex].consumed + newItem.consumed,
+          loss: mergedData[existingIndex].loss + newItem.loss,
+          lossPercentage: newItem.lossPercentage,
+          status: getStatus(newItem.lossPercentage),
+          history: [...mergedData[existingIndex].history, ...newItem.history]
+        };
+      } else {
+        mergedData.push(newItem);
+      }
+    });
+    
+    return mergedData;
+  };
+
+  const updateVisualizations = (data: MunicipalityData[]) => {
+    if (data.length === 0) return;
+
+    const trendData = calculateTrendData(data);
+    const distributionData = calculateDistributionData(data);
+
+    setTrendData(trendData);
+    setDistributionData(distributionData);
+  };
+
+  const calculateTrendData = (data: MunicipalityData[]): TrendData[] => {
+    const trendMap: Record<string, TrendData> = {};
+
+    data.forEach(municipality => {
+      municipality.history.forEach(monthData => {
+        if (!trendMap[monthData.month]) {
+          trendMap[monthData.month] = {
+            month: monthData.month,
+            distributed: 0,
+            consumed: 0,
+            loss: 0
+          };
+        }
+
+        trendMap[monthData.month].distributed += monthData.distributed;
+        trendMap[monthData.month].consumed += monthData.consumed;
+        trendMap[monthData.month].loss += monthData.loss;
+      });
+    });
+
+    return Object.values(trendMap).sort((a, b) => {
+      const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dec"];
+      return months.indexOf(a.month) - months.indexOf(b.month);
+    });
+  };
+
+  const calculateDistributionData = (data: MunicipalityData[]): DistributionData[] => {
     const distributionRanges = [
       { min: 0, max: 10, name: "0-10%" },
       { min: 10, max: 20, name: "10-20%" },
@@ -203,42 +291,96 @@ export const Dashboard = () => {
       { min: 40, max: 100, name: "40-50%" }
     ];
 
-    const distributionData = distributionRanges.map(range => {
-      const count = municipalData.filter(m => 
-        m.loss >= range.min && m.loss < range.max
+    return distributionRanges.map(range => {
+      const count = data.filter(m => 
+        m.lossPercentage >= range.min && m.lossPercentage < range.max
       ).length;
       return { name: range.name, value: count };
     });
-
-    setMunicipalData(municipalData);
-    setHeatmapData(heatmapData);
-    setTrendData(trendData);
-    setDistributionData(distributionData);
   };
 
-  const getStatus = (loss: number) => {
+  const getStatus = (loss: number): "Crítico" | "Alerta" | "Estável" => {
     if (loss > 20) return "Crítico";
     if (loss > 10) return "Alerta";
     return "Estável";
   };
 
-  const getRegion = (municipality: string) => {
-    if (["Recife", "Jaboatão", "Olinda", "Paulista"].includes(municipality)) return "Metropolitana";
-    if (["Caruaru", "Garanhuns", "Surubim"].includes(municipality)) return "Agreste";
-    return null;
+  const getRegion = (municipality: string): string => {
+    const metropolitan = ["Recife", "Jaboatão", "Olinda", "Paulista", "Camaragibe"];
+    const agreste = ["Caruaru", "Garanhuns", "Surubim", "Belo Jardim", "Pesqueira"];
+    
+    if (metropolitan.includes(municipality)) return "Metropolitana";
+    if (agreste.includes(municipality)) return "Agreste";
+    return "Sertão";
   };
 
   const cancelImport = () => {
-    setImportFile(null);
+    setImportFiles([]);
     setIsImporting(false);
     setImportProgress(0);
   };
 
-  const totalLoss = municipalData.reduce((sum, m) => sum + (m.volume * m.loss / 100), 0);
+  const removeFile = (index: number) => {
+    setImportFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleRowExpand = (municipality: string) => {
+    setExpandedRow(expandedRow === municipality ? null : municipality);
+  };
+
+  const exportToCSV = () => {
+    const headers = ["Município", "Região", "Volume Distribuído (m³)", "Volume Consumido (m³)", "Volume Perdido (m³)", "Perda (%)", "Status"];
+    const csvContent = [
+      headers.join(","),
+      ...municipalData.map(item => [
+        `"${item.name}"`,
+        item.region,
+        item.distributed,
+        item.consumed,
+        item.loss,
+        item.lossPercentage,
+        item.status
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `dados_hidricos_${format(new Date(), "yyyyMMdd")}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const getMunicipalityTrendData = (municipalityName: string): TrendData[] => {
+    if (!municipalityName) return trendData;
+    
+    const municipality = municipalData.find(m => m.name === municipalityName);
+    if (!municipality) return [];
+    
+    return municipality.history.map(month => ({
+      month: month.month,
+      distributed: month.distributed,
+      consumed: month.consumed,
+      loss: month.loss
+    })).sort((a, b) => {
+      const months = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dec"];
+      return months.indexOf(a.month) - months.indexOf(b.month);
+    });
+  };
+
+  const totalLoss = municipalData.reduce((sum, m) => sum + m.loss, 0);
+  const totalDistributed = municipalData.reduce((sum, m) => sum + m.distributed, 0);
+  const totalConsumed = municipalData.reduce((sum, m) => sum + m.consumed, 0);
   const criticalMunicipalities = municipalData.filter(m => m.status === "Crítico").length;
-  const regionalAverage = Math.round(municipalData.reduce((sum, m) => sum + m.loss, 0) / municipalData.length);
+  const regionalAverageLoss = municipalData.length > 0 
+    ? Math.round(municipalData.reduce((sum, m) => sum + m.lossPercentage, 0) / municipalData.length)
+    : 0;
+  
   const filteredMunicipalData = municipalData.filter(m =>
-    m.name.toLowerCase().includes(filterText.toLowerCase())
+    m.name.toLowerCase().includes(filterText.toLowerCase()) ||
+    m.region.toLowerCase().includes(filterText.toLowerCase())
   );
 
   return (
@@ -251,6 +393,7 @@ export const Dashboard = () => {
               alt="Compesa Logo" 
               className="h-10 mr-4"
             />
+            <h1 className="text-xl font-bold">Monitoramento de Perdas Hídricas</h1>
           </div>
         </div>
 
@@ -305,6 +448,7 @@ export const Dashboard = () => {
                   className="hidden"
                   onChange={handleFileUpload}
                   disabled={isImporting}
+                  multiple
                 />
               </label>
             </Button>
@@ -336,29 +480,45 @@ export const Dashboard = () => {
           <Button 
             variant="outline" 
             className="gap-2"
-            onClick={resetToMockData}
+            onClick={exportToCSV}
           >
-            <RefreshCw className="h-4 w-4" />
-            Usar Dados Mockados
+            <Download className="h-4 w-4" />
+            Exportar Dados
           </Button>
         </div>
       </div>
 
-      {importFile && !isImporting && (
-        <div className="mb-4 p-4 bg-blue-50 rounded-md flex justify-between items-center">
-          <div>
-            <p className="font-medium">Arquivo pronto para importação</p>
-            <p className="text-sm text-muted-foreground">
-              {importFile.name} ({Math.round(importFile.size / 1024)} KB)
-            </p>
+      {importFiles.length > 0 && !isImporting && (
+        <div className="mb-4 p-4 bg-blue-50 rounded-md">
+          <div className="flex justify-between items-center mb-2">
+            <h3 className="font-medium">Arquivos prontos para importação</h3>
+            <div className="flex space-x-2">
+              <Button variant="outline" size="sm" onClick={cancelImport}>
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={processImport}>
+                Processar {importFiles.length} arquivo{importFiles.length > 1 ? 's' : ''}
+              </Button>
+            </div>
           </div>
-          <div className="flex space-x-2">
-            <Button variant="outline" size="sm" onClick={cancelImport}>
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={processImport}>
-              Processar
-            </Button>
+          <div className="space-y-2">
+            {importFiles.map((file, index) => (
+              <div key={index} className="flex justify-between items-center p-2 bg-white rounded">
+                <div>
+                  <p className="text-sm">{file.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {Math.round(file.size / 1024)} KB
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeFile(index)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -370,15 +530,15 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium">Perda Total</CardTitle>
-            <div className="text-red-500 flex items-center">
+            <CardTitle className="text-sm font-medium">Volume Total Distribuído</CardTitle>
+            <div className="text-blue-500 flex items-center">
               <ArrowUp className="h-4 w-4 mr-1" />
-              <span className="text-sm">+12%</span>
+              <span className="text-sm">+5%</span>
             </div>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {totalLoss.toLocaleString("pt-BR")} m³
+              {(totalDistributed / 1000).toLocaleString("pt-BR")} mil m³
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Volume acumulado no período
@@ -388,71 +548,37 @@ export const Dashboard = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium">Municípios Críticos</CardTitle>
-            <div className="text-sm text-muted-foreground">
-              {criticalMunicipalities}/{municipalData.length}
+            <CardTitle className="text-sm font-medium">Volume Total Consumido</CardTitle>
+            <div className="text-green-500 flex items-center">
+              <ArrowUp className="h-4 w-4 mr-1" />
+              <span className="text-sm">+3%</span>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{criticalMunicipalities}</div>
-            <div className="mt-2 h-2 bg-gray-200 rounded-full">
-              <div
-                className="h-2 rounded-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500"
-                style={{
-                  width: `${(criticalMunicipalities / municipalData.length) * 100}%`,
-                }}
-              ></div>
+            <div className="text-2xl font-bold">
+              {(totalConsumed / 1000).toLocaleString("pt-BR")} mil m³
             </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Volume acumulado no período
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-medium">Média Regional</CardTitle>
-            <div className="text-sm text-muted-foreground">Meta: 80%</div>
+            <CardTitle className="text-sm font-medium">Volume Total Perdido</CardTitle>
+            <div className="text-red-500 flex items-center">
+              <ArrowUp className="h-4 w-4 mr-1" />
+              <span className="text-sm">+8%</span>
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center">
-              <div className="relative w-16 h-16">
-                <svg className="w-full h-full" viewBox="0 0 36 36">
-                  <path
-                    d="M18 2.0845
-                      a 15.9155 15.9155 0 0 1 0 31.831
-                      a 15.9155 15.9155 0 0 1 0 -31.831"
-                    fill="none"
-                    stroke="#E5E7EB"
-                    strokeWidth="3"
-                  />
-                  <path
-                    d="M18 2.0845
-                      a 15.9155 15.9155 0 0 1 0 31.831
-                      a 15.9155 15.9155 0 0 1 0 -31.831"
-                    fill="none"
-                    stroke={
-                      regionalAverage >= 80
-                        ? "#10B981"
-                        : regionalAverage >= 60
-                        ? "#F59E0B"
-                        : "#EF4444"
-                    }
-                    strokeWidth="3"
-                    strokeDasharray={`${regionalAverage}, 100`}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center text-lg font-bold">
-                  {regionalAverage}%
-                </div>
-              </div>
-              <div className="ml-4">
-                <p className="text-xs text-muted-foreground">
-                  {regionalAverage >= 80
-                    ? "Acima da meta"
-                    : regionalAverage >= 60
-                    ? "Próximo da meta"
-                    : "Abaixo da meta"}
-                </p>
-              </div>
+            <div className="text-2xl font-bold">
+              {(totalLoss / 1000).toLocaleString("pt-BR")} mil m³
             </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              {((totalLoss / totalDistributed) * 100).toFixed(1)}% do volume distribuído
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -460,26 +586,63 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Tendência Mensal</CardTitle>
-            <Button variant="ghost" size="sm">
+            <CardTitle>Balanço de Volumes por Município</CardTitle>
+            <Button variant="ghost" size="sm" onClick={exportToCSV}>
               <Download className="h-4 w-4" />
             </Button>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
+              <BarChart
+                data={[...municipalData]
+                  .sort((a, b) => b.distributed - a.distributed)
+                  .slice(0, 10)
+                  .map(m => ({
+                    name: m.name,
+                    Distribuído: m.distributed / 1000,
+                    Consumido: m.consumed / 1000,
+                    Perdido: m.loss / 1000
+                  }))}
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis label={{ value: 'mil m³', angle: -90, position: 'insideLeft' }} />
+                <Tooltip formatter={(value) => [`${value} mil m³`, '']} />
+                <Legend />
+                <Bar dataKey="Distribuído" fill="#3B82F6" name="Distribuído" />
+                <Bar dataKey="Consumido" fill="#10B981" name="Consumido" />
+                <Bar dataKey="Perdido" fill="#EF4444" name="Perdido" />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Evolução do Volume Distribuído</CardTitle>
+            <Button variant="ghost" size="sm" onClick={exportToCSV}>
+              <Download className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={getMunicipalityTrendData(selectedMunicipality)
+                  .map(d => ({ ...d, distributed: d.distributed / 1000 }))}
+              >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
+                <YAxis label={{ value: 'mil m³', angle: -90, position: 'insideLeft' }} />
+                <Tooltip formatter={(value) => [`${value} mil m³`, '']} />
                 <Legend />
                 <Line
                   type="monotone"
-                  dataKey="actual"
+                  dataKey="distributed"
                   stroke="#3B82F6"
                   strokeWidth={2}
                   activeDot={{ r: 6 }}
-                  name="Perda Real"
+                  name="Volume Distribuído"
                 />
               </LineChart>
             </ResponsiveContainer>
@@ -488,110 +651,68 @@ export const Dashboard = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Comparativo Municipal</CardTitle>
-            <Button variant="ghost" size="sm">
+            <CardTitle>Evolução do Volume Consumido</CardTitle>
+            <Button variant="ghost" size="sm" onClick={exportToCSV}>
               <Download className="h-4 w-4" />
             </Button>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[...municipalData].sort((a, b) => b.loss - a.loss).slice(0, 10)}
-                layout="vertical"
-                margin={{ left: 30 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={80} />
-                <Tooltip />
-                <Bar
-                  dataKey="loss"
-                  fill="#3B82F6"
-                  name="Perda (%)"
-                  radius={[0, 4, 4, 0]}
-                >
-                  {municipalData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={
-                        entry.name === selectedMunicipality ? "#1D4ED8" : "#3B82F6"
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Heatmap Regional</CardTitle>
-          </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={heatmapData}
-                margin={{ top: 20, right: 30, left: 30, bottom: 30 }}
+              <LineChart
+                data={getMunicipalityTrendData(selectedMunicipality)
+                  .map(d => ({ ...d, consumed: d.consumed / 1000 }))}
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
-                <YAxis dataKey="region" />
-                <Tooltip />
+                <YAxis label={{ value: 'mil m³', angle: -90, position: 'insideLeft' }} />
+                <Tooltip formatter={(value) => [`${value} mil m³`, '']} />
                 <Legend />
-                <Bar dataKey="loss" name="Perda (%)">
-                  {heatmapData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={
-                        entry.loss < 10
-                          ? "#10B981"
-                          : entry.loss < 20
-                          ? "#A3E635"
-                          : entry.loss < 30
-                          ? "#FACC15"
-                          : entry.loss < 40
-                          ? "#F97316"
-                          : "#EF4444"
-                      }
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Line
+                  type="monotone"
+                  dataKey="consumed"
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  activeDot={{ r: 6 }}
+                  name="Volume Consumido"
+                />
+              </LineChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Distribuição Percentual</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Evolução do Volume Perdido</CardTitle>
+            <Button variant="ghost" size="sm" onClick={exportToCSV}>
+              <Download className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={distributionData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                  nameKey="name"
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
-                >
-                  {distributionData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
+              <ComposedChart
+                data={getMunicipalityTrendData(selectedMunicipality)
+                  .map(d => ({ ...d, loss: d.loss / 1000 }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis label={{ value: 'mil m³', angle: -90, position: 'insideLeft' }} />
+                <Tooltip formatter={(value) => [`${value} mil m³`, '']} />
                 <Legend />
-              </PieChart>
+                <Area
+                  type="monotone"
+                  dataKey="loss"
+                  fill="#FECACA"
+                  stroke="#EF4444"
+                  name="Volume Perdido"
+                />
+                <Line
+                  type="monotone"
+                  dataKey="loss"
+                  stroke="#EF4444"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
@@ -607,7 +728,7 @@ export const Dashboard = () => {
         <CardContent>
           <div className="flex justify-between items-center mb-4">
             <Input
-              placeholder="Filtrar municípios..."
+              placeholder="Filtrar municípios ou regiões..."
               className="max-w-sm"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
@@ -641,8 +762,11 @@ export const Dashboard = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Município</TableHead>
+                <TableHead>Região</TableHead>
+                <TableHead>Volume Distribuído (m³)</TableHead>
+                <TableHead>Volume Consumido (m³)</TableHead>
+                <TableHead>Volume Perdido (m³)</TableHead>
                 <TableHead>Perda (%)</TableHead>
-                <TableHead>Volume (m³)</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -667,25 +791,26 @@ export const Dashboard = () => {
                           {municipality.name}
                         </div>
                       </TableCell>
+                      <TableCell>{municipality.region}</TableCell>
+                      <TableCell>{municipality.distributed.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell>{municipality.consumed.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell>{municipality.loss.toLocaleString("pt-BR")}</TableCell>
                       <TableCell>
                         <div className="flex items-center">
-                          <span className="mr-2">{municipality.loss}%</span>
+                          <span className="mr-2">{municipality.lossPercentage.toFixed(1)}%</span>
                           <div className="w-20 h-2 bg-gray-200 rounded-full">
                             <div
                               className={`h-2 rounded-full ${
-                                municipality.loss < 10
+                                municipality.lossPercentage < 10
                                   ? "bg-green-500"
-                                  : municipality.loss < 20
+                                  : municipality.lossPercentage < 20
                                   ? "bg-yellow-500"
                                   : "bg-red-500"
                               }`}
-                              style={{ width: `${municipality.loss}%` }}
+                              style={{ width: `${Math.min(municipality.lossPercentage, 100)}%` }}
                             ></div>
                           </div>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        {municipality.volume.toLocaleString("pt-BR")}
                       </TableCell>
                       <TableCell>
                         {municipality.status === "Crítico" ? (
@@ -721,32 +846,39 @@ export const Dashboard = () => {
                     </TableRow>
                     {expandedRow === municipality.name && (
                       <TableRow>
-                        <TableCell colSpan={5} className="bg-gray-50 p-4">
+                        <TableCell colSpan={8} className="bg-gray-50 p-4">
                           <div className="grid grid-cols-3 gap-4">
                             <div>
                               <h4 className="text-sm font-medium mb-2">
                                 Detalhes Técnicos
                               </h4>
                               <p className="text-sm text-muted-foreground">
-                                Perda: {municipality.loss}%
+                                Perda: {municipality.lossPercentage.toFixed(1)}%
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                Volume: {municipality.volume.toLocaleString("pt-BR")} m³
+                                Eficiência: {((municipality.consumed / municipality.distributed) * 100).toFixed(1)}%
                               </p>
                             </div>
                             <div>
                               <h4 className="text-sm font-medium mb-2">
-                                Histórico
+                                Histórico Recente
                               </h4>
-                              <p className="text-sm text-muted-foreground">
-                                Última atualização: {format(new Date(), "dd/MM/yyyy")}
-                              </p>
+                              {municipality.history.slice(0, 3).map((month, i) => (
+                                <p key={i} className="text-sm text-muted-foreground">
+                                  {month.month}: {month.distributed.toLocaleString("pt-BR")} m³ distribuídos
+                                </p>
+                              ))}
                             </div>
                             <div>
                               <h4 className="text-sm font-medium mb-2">Ações</h4>
-                              <Button variant="outline" size="sm" className="mr-2">
-                                Gerar Relatório
-                              </Button>
+                              <div className="flex space-x-2">
+                                <Button variant="outline" size="sm">
+                                  Gerar Relatório
+                                </Button>
+                                <Button variant="outline" size="sm">
+                                  Enviar Alerta
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </TableCell>
