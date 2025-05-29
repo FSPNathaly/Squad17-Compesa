@@ -1,224 +1,156 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { AppContext } from '../../App'; // Path to App.tsx from src/pages/Home/index.tsx
 
-export const Home = () => {
-  const [formData, setFormData] = useState({
-    email: "",
-    password: ""
-  });
-  const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState({
-    email: "",
-    password: ""
-  });
-  const [loading, setLoading] = useState(false);
-  const [attempts, setAttempts] = useState(0);
-  const [isBlocked, setIsBlocked] = useState(false);
-  const emailRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    emailRef.current?.focus();
-  }, []);
-
-  const validateField = (name: string, value: string) => {
-    let error = "";
-    
-    if (name === "email") {
-      const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!regex.test(value)) {
-        error = "Formato de email inválido";
-      } else if (!value.endsWith('@compesa.com.br')) {
-        error = "Use seu email corporativo";
-      }
+// Inline Component Definitions
+const Button = ({ children, onClick, className = '', variant = 'default', disabled = false }: { children: React.ReactNode, onClick?: () => void, className?: string, variant?: string, disabled?: boolean}) => {
+    let baseStyle = 'px-4 py-2 rounded-md transition-colors duration-200';
+    if (variant === 'default') {
+        baseStyle += ' bg-blue-600 text-white hover:bg-blue-700';
+    } else if (variant === 'outline') {
+        baseStyle += ' border border-gray-300 text-gray-700 hover:bg-gray-100';
     }
-
-    if (name === "password" && value.length < 8) {
-      error = "Mínimo 8 caracteres";
+    if (disabled) {
+        baseStyle += ' opacity-50 cursor-not-allowed';
     }
-
-    setErrors(prev => ({ ...prev, [name]: error }));
-    return !error;
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-    
-    if (errors[name as keyof typeof errors]) {
-      validateField(name, value);
-    }
-  };
-
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    validateField(name, value);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isBlocked) return;
-
-    const isEmailValid = validateField("email", formData.email);
-    const isPasswordValid = validateField("password", formData.password);
-    if (!isEmailValid || !isPasswordValid) return;
-
-    setLoading(true);
-    
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (response.ok) {
-        navigate("/dashboard");
-      } else {
-        const newAttempts = attempts + 1;
-        setAttempts(newAttempts);
-        
-        if (newAttempts >= 3) {
-          setIsBlocked(true);
-          setTimeout(() => setIsBlocked(false), 30000);
-        }
-      }
-    } catch (error) {
-      console.error("Login error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isFormValid = () => {
     return (
-      !loading &&
-      !isBlocked &&
-      formData.email &&
-      formData.password &&
-      !errors.email &&
-      !errors.password
+        <button onClick={onClick} className={`${baseStyle} ${className}`} disabled={disabled}>
+            {children}
+        </button>
     );
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-[#2C3E50] to-[#3498DB]">
-      <Card className="w-full max-w-md mx-4 p-8 bg-white shadow-xl rounded-xl">
-        <div className="flex flex-col items-center mb-10">
-          <img
-            src="https://servicos.compesa.com.br/wp-content/uploads/2022/07/compesa-h.png"
-            alt="Compesa Logo"
-            className="h-28 object-contain"
-            loading="lazy"
-          />
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-          <div className="space-y-4">
-            <div>
-              <div className={`relative ${errors.email ? "mb-1" : ""}`}>
-                <Mail className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${errors.email ? "text-destructive" : "text-muted-foreground"}`} />
-                <Input
-                  ref={emailRef}
-                  type="email"
-                  name="email"
-                  placeholder="email@compesa.com.br"
-                  className={`pl-10 pr-4 py-5 text-base ${errors.email ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                  value={formData.email}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  disabled={loading || isBlocked}
-                  aria-invalid={!!errors.email}
-                  aria-describedby="email-error"
-                />
-              </div>
-              {errors.email && (
-                <p id="email-error" className="text-sm text-destructive flex items-start gap-1 mt-1">
-                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{errors.email}</span>
-                </p>
-              )}
-            </div>
-
-            <div>
-              <div className={`relative ${errors.password ? "mb-1" : ""}`}>
-                <Lock className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${errors.password ? "text-destructive" : "text-muted-foreground"}`} />
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  placeholder="••••••••"
-                  className={`pl-10 pr-10 py-5 text-base ${errors.password ? "border-destructive focus-visible:ring-destructive" : ""}`}
-                  value={formData.password}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  disabled={loading || isBlocked}
-                  aria-invalid={!!errors.password}
-                  aria-describedby="password-error"
-                />
-                <button
-                  type="button"
-                  className={`absolute right-3 top-1/2 -translate-y-1/2 ${errors.password ? "text-destructive" : "text-muted-foreground"} hover:text-primary`}
-                  onClick={() => setShowPassword(!showPassword)}
-                  disabled={loading || isBlocked}
-                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                </button>
-              </div>
-              {errors.password && (
-                <p id="password-error" className="text-sm text-destructive flex items-start gap-1 mt-1">
-                  <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{errors.password}</span>
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end pt-1">
-            <a
-              href="/forgot-password"
-              className="text-xs text-[#7F8C8D] hover:text-[#3498DB] hover:underline transition-colors"
-            >
-              Esqueci minha senha
-            </a>
-          </div>
-
-          <Button
-            type="submit"
-            className="w-full h-11 bg-[#3498DB] hover:bg-[#2980B9] text-white font-medium transition-all hover:scale-[1.01] active:scale-95"
-            disabled={!isFormValid()}
-            aria-busy={loading}
-          >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                <span>Acessando...</span>
-              </div>
-            ) : isBlocked ? (
-              "Tente novamente em 30s"
-            ) : (
-              "Acessar"
-            )}
-          </Button>
-        </form>
-
-        {isBlocked && (
-          <div className="mt-4 p-3 bg-destructive/10 text-destructive rounded-md flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span className="text-sm">Muitas tentativas falhas. Por favor, aguarde 30 segundos.</span>
-          </div>
-        )}
-
-        <div className="mt-8 text-center text-xs text-[#7F8C8D]">
-          © {new Date().getFullYear()} Compesa. Todos os direitos reservados.
-        </div>
-      </Card>
-    </div>
-  );
 };
+
+const Input = ({ placeholder, type = 'text', value, onChange, className = '', icon: Icon, pattern }: { placeholder?: string, type?: string, value?: string, onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void, className?: string, icon?: React.ElementType, pattern?: string }) => (
+    <div className="relative flex items-center w-full">
+        {Icon && <Icon className="absolute left-3 text-gray-400" size={20} />}
+        <input
+            type={type}
+            placeholder={placeholder}
+            value={value}
+            onChange={onChange}
+            pattern={pattern}
+            className={`flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${Icon ? 'pl-10' : ''} ${className}`}
+        />
+    </div>
+);
+
+const Mail = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <rect width="20" height="16" x="2" y="4" rx="2" />
+        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+);
+
+const Lock = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+);
+
+const Eye = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+        <circle cx="12" cy="12" r="3" />
+    </svg>
+);
+
+const EyeOff = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-10-7-10-7a18.06 18.06 0 0 1 5.36-5.06M19.72 19.72A10 10 0 0 0 22 12c0-7-3-7-10-7a18.06 18.06 0 0 0-5.06 5.36" />
+        <line x1="2" x2="22" y1="2" y2="22" />
+    </svg>
+);
+
+
+const HomePage = () => {
+    const { setIsLoggedIn } = useContext(AppContext);
+    const navigate = useNavigate();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [emailError, setEmailError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const emailRegex = new RegExp(
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+    );
+
+    const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setEmail(e.target.value);
+        if (e.target.value && !emailRegex.test(e.target.value)) {
+            setEmailError('Por favor, insira um email válido.');
+        } else {
+            setEmailError('');
+        }
+    };
+
+    const handleLogin = () => {
+        if (!email || !password) {
+            alert('Por favor, preencha todos os campos.');
+            return;
+        }
+        if (emailError) {
+            alert('Por favor, corrija os erros do formulário.');
+            return;
+        }
+        setIsLoading(true);
+        setTimeout(() => {
+            setIsLoggedIn(true);
+            setIsLoading(false);
+            navigate('/dashboard');
+        }, 1500);
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#2C3E50] to-[#3498DB] p-4">
+            <div className="flex w-full max-w-4xl bg-white rounded-lg shadow-xl overflow-hidden">
+                <div className="w-full md:w-1/2 p-8 flex flex-col items-center justify-center">
+                    <img src="https://placehold.co/200x100/CCCCCC/333333?text=COMPESA+LOGO" alt="Compesa Logo" className="mb-8 h-[100px]" />
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">Acessar Sistema</h2>
+                    <div className="w-full max-w-sm space-y-4">
+                        <div>
+                            <Input
+                                placeholder="email@compesa.com.br"
+                                type="email"
+                                value={email}
+                                onChange={handleEmailChange}
+                                icon={Mail}
+                                pattern={emailRegex.source}
+                            />
+                            {emailError && <p className="text-red-500 text-xs mt-1">{emailError}</p>}
+                        </div>
+                        <div className="relative">
+                            <Input
+                                placeholder="••••••••"
+                                type={showPassword ? 'text' : 'password'}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                icon={Lock}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </button>
+                        </div>
+                        <Button onClick={handleLogin} className="w-full" disabled={isLoading}>
+                            {isLoading ? 'Acessando...' : 'Acessar'}
+                        </Button>
+                        <a href="#" className="text-sm text-blue-600 hover:underline text-center block">Esqueci minha senha</a>
+                    </div>
+                </div>
+                <div className="hidden md:flex w-1/2 bg-blue-500 items-center justify-center p-8">
+                    <div className="text-white text-center">
+                        <h3 className="text-3xl font-bold mb-4">Bem-vindo ao Sistema Hídrico</h3>
+                        <p className="text-lg">Monitore e analise os dados de distribuição e perda de água com precisão.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default HomePage;
