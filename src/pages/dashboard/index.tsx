@@ -1,882 +1,805 @@
-import React, { useState, useMemo, useRef, type ReactNode, type ElementType, type ComponentPropsWithoutRef, useEffect, useContext } from 'react';
-import {
-    useAppContext,
-    Modal,
-    type ImportedFile,
-    MenuContext as GlobalMenuContext,
-    globalCleanAndParseNumber,
-    globalTransformHeader,
-    type FileTypeCategory,
-    fileTypeCategories
-} from '../../App';
-import { parse, unparse, type ParseResult, type ParseError } from 'papaparse';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line, Cell } from 'recharts';
-import { 
-    UploadCloud, FileText, Trash2, Eye, Table, Download, AlertCircle, TrendingDown, 
-    Droplets, BarChart3 as BarChart3Icon, LineChart as LineChartIconLucide, 
-    ChevronDown, BarChartHorizontal as BarChartHorizontalIcon, HelpCircle, 
-    CalendarDays, LayoutDashboard, CheckSquare, Square
-} from 'lucide-react';
+import { ptBR } from 'date-fns/locale';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import type { Dispatch, SetStateAction, ReactElement } from 'react';
+import Papa, { type ParseResult, type ParseError as PapaParseErrorAliased } from 'papaparse';
+import { jsPDF } from 'jspdf';
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Download, Upload, ChevronDown, Calendar, Filter, X, Trash2, FileText, MoreVertical, LogOut, Sheet } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuGroup } from "@/components/ui/dropdown-menu";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from "recharts";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComp } from "@/components/ui/calendar";
+import { format } from "date-fns";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { ImportedFileEntry, CsvData as AppCsvData, BalancoVolumeData as AppBalancoVolumeData } from '../../App';
 
-export type PeriodAggregation = 'Diário' | 'Semanal' | 'Mensal' | 'Anual';
+type CsvData = AppCsvData;
+type BalancoVolumeData = AppBalancoVolumeData;
 
-const defaultKpis = {
-    perdaTotalEstimada: 0,
-    municipiosCriticos: 0,
-    volumeDistribuidoTotal: 0,
-    variacaoPerdaMesAnterior: 0,
-    eficienciaArrecadacao: 0,
-};
+interface EvolucaoDataPoint {
+  month: string;
+  value: number;
+}
 
-const defaultBalançoVolumes = [
-    { municipio: 'N/A', 'Volume Distribuído': 0, 'Volume Consumido': 0, 'Perda Total': 0, 'Mês/Ano Referência': 'N/A' },
-];
+const MOCK_MONTHS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-const defaultEvolucaoData = [{ 'periodo': 'N/A', 'volume_distribuido': 0, 'volume_consumido': 0, 'perda_total': 0, count:0 }];
+interface DashboardProps {
+  importedFilesHistory: ImportedFileEntry[];
+  activeFileId: string | null;
+  onFileImportedOrUpdated: (fileEntry: ImportedFileEntry) => void;
+  onFileSelected: (fileId: string | null) => void;
+  onFileDeleted: (fileId: string) => void;
+  onFileDateEdited: (fileId: string, newDate: Date) => void;
+  navigateToPlanilha: () => void;
+  onLogout: () => void;
+}
 
+const Slider = ({
+  value,
+  onValueChange,
+  min,
+  max,
+  step = 100,
+  className = "",
+}: {
+  value: number[];
+  onValueChange: (value: number[]) => void;
+  min: number;
+  max: number;
+  step?: number;
+  className?: string;
+}) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const newValue = [...value];
+    newValue[index] = Number(e.target.value);
+    onValueChange(newValue);
+  };
 
-const KPICard: React.FC<{ title: string; value: string | number; unit?: string; icon: React.ReactNode; trend?: number; helpText?: string }> = ({ title, value, unit, icon, trend, helpText }) => {
-    const trendValueColor = trend ? (trend > 0 ? 'text-red-500' : 'text-green-500') : '';
-    const trendIcon = trend && trend !== 0 ? (trend > 0 ? <TrendingDown size={16} className="ml-1" /> : <TrendingDown size={16} className="ml-1 transform rotate-180"/>) : null;
-    const valueStr = typeof value === 'number' ? value.toLocaleString('pt-BR', { minimumFractionDigits: trend === undefined ? 2 : 1, maximumFractionDigits: trend === undefined ? 2 : 1 }) : value;
-    
-    return (
-        <div className="bg-white p-4 rounded-lg shadow hover:shadow-lg transition-shadow duration-200 flex flex-col justify-between h-full">
-            <div className="flex items-start justify-between">
-                <div className="p-3 bg-gray-100 rounded-full mr-3">{icon}</div>
-                {helpText && (
-                    <div className="relative group">
-                        <HelpCircle size={16} className="text-gray-400 cursor-help" />
-                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-60 p-2 text-xs text-white bg-gray-700 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none">
-                            {helpText}
-                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-700"></div>
-                        </div>
-                    </div>
-                )}
-            </div>
-            <div>
-                <h3 className="text-sm font-medium text-gray-500 truncate" title={title}>{title}</h3>
-                <div className="flex items-baseline">
-                    <p className={`text-2xl font-semibold text-gray-800 ${trendValueColor}`}>{valueStr}</p>
-                    {unit && <span className={`text-sm text-gray-600 ml-1 ${trendValueColor}`}>{unit}</span>}
-                    {trendIcon && <span className={trendValueColor}>{trendIcon}</span>}
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-const EvolutionChartComponent: React.FC<{ title: string; data: any[]; dataKey: string; color: string; yAxisLabel?: string }> = ({ title, data, dataKey, color, yAxisLabel }) => (
-    <div className="h-80 bg-white p-4 rounded-lg shadow">
-        <h3 className="text-md font-semibold text-gray-600 mb-2 text-center">{title}</h3>
-        <ResponsiveContainer width="100%" height="calc(100% - 30px)">
-            <LineChart data={data} margin={{ top: 5, right: 20, left: yAxisLabel ? 10 : -25, bottom: 15 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="periodo" stroke="#6b7280" fontSize={10} tick={{dy: 5}} />
-                <YAxis stroke="#6b7280" fontSize={10} tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString('pt-BR', {notation: 'compact'}) : String(value)} label={{ value: yAxisLabel, angle: -90, position: 'insideLeft', offset: yAxisLabel ? 0 : 5, fontSize: 10, fill:"#6b7280"}}/>
-                <Tooltip formatter={(value: number, name: string) => [`${typeof value === 'number' ? value.toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2}) : String(value)}`, name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())]} />
-                <Legend iconSize={10} wrapperStyle={{fontSize: "12px"}}/>
-                <Line type="monotone" dataKey={dataKey} stroke={color} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} name={dataKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} />
-            </LineChart>
-        </ResponsiveContainer>
+  return (
+    <div className={`w-full ${className}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm text-gray-600">{value[0]}</span>
+        <span className="text-sm text-gray-600">{value[1]}</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value[0]}
+          onChange={(e) => handleChange(e, 0)}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+        />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value[1]}
+          onChange={(e) => handleChange(e, 1)}
+          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+        />
+      </div>
     </div>
-);
-
-const ImportCSVModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-    const { addImportedFile, showToast, setIsLoading } = useAppContext();
-    const [selectedFilesList, setSelectedFilesList] = useState<File[]>([]);
-    const [referenceDate, setReferenceDate] = useState<string>(new Date().toISOString().split('T')[0]);
-    const [fileCategories, setFileCategories] = useState<Record<string, FileTypeCategory>>({});
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const guessCategory = (fileName: string): FileTypeCategory => {
-        const lowerName = fileName.toLowerCase();
-        if (lowerName.includes('vcnorma')) return 'VCNorma';
-        if (lowerName.includes('vdistrib') || lowerName.includes('vol_dist')) return 'VDistrib';
-        if (lowerName.includes('reldesvios') || lowerName.includes('desvio')) return 'RelDesvios';
-        if (lowerName.includes('analiseacum') || lowerName.includes('acumulada')) return 'AnaliseAcum';
-        if (lowerName.includes('analise')) return 'Analise';
-        return 'Outros';
-    };
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (event.target.files) {
-            const newFiles = Array.from(event.target.files);
-            const csvFiles = newFiles.filter(file => file.name.toLowerCase().endsWith('.csv'));
-            if (csvFiles.length !== newFiles.length) showToast("Apenas arquivos .csv são permitidos.", 'error');
-            
-            const newCategoriesState: Record<string, FileTypeCategory> = {};
-            csvFiles.forEach(file => {
-                if (!Object.values(fileCategories).includes(file.name as any)) {
-                    newCategoriesState[file.name] = guessCategory(file.name);
-                }
-            });
-            setFileCategories(prev => ({...prev, ...newCategoriesState}));
-            setSelectedFilesList(prevFiles => {
-                const currentFileNames = new Set(prevFiles.map(f => f.name));
-                const newAndUniqueFiles = csvFiles.filter(nf => !currentFileNames.has(nf.name));
-                return [...prevFiles, ...newAndUniqueFiles];
-            });
-        }
-        if (fileInputRef.current) fileInputRef.current.value = "";
-    };
-
-    const handleCategoryChange = (fileName: string, category: FileTypeCategory) => {
-        setFileCategories(prev => ({ ...prev, [fileName]: category }));
-    };
-
-    const removeFileFromSelection = (fileName: string) => {
-        setSelectedFilesList(prev => prev.filter(file => file.name !== fileName));
-        setFileCategories(prev => {
-            const updated = {...prev};
-            delete updated[fileName];
-            return updated;
-        });
-    };
-
-    const handleImport = async () => {
-        if (selectedFilesList.length === 0) { showToast("Selecione ao menos um arquivo CSV.", 'error'); return; }
-        if (!referenceDate) { showToast("Selecione uma data de referência.", 'error'); return; }
-        setIsLoading(true);
-        showToast(`Importando ${selectedFilesList.length} arquivo(s)...`, 'info');
-        let importSuccessCount = 0;
-
-        for (const file of selectedFilesList) {
-            const fileCategory = fileCategories[file.name] || guessCategory(file.name);
-            try {
-                const parsedData = await new Promise<Record<string, any>[]>((resolve, reject) => {
-                    parse<Record<string, any>>(file, {
-                        header: true, skipEmptyLines: true, transformHeader: globalTransformHeader, dynamicTyping: false,
-                        complete: (results: ParseResult<Record<string, any>>) => {
-                            const transformedData = results.data.map((row: Record<string, any>) => {
-                                const newRow: Record<string, any> = {};
-                                for (const key in row) {
-                                    if (Object.prototype.hasOwnProperty.call(row, key)) {
-                                        const lowerKey = key.toLowerCase();
-                                        if (lowerKey.includes('volume') || lowerKey.includes('perda') || lowerKey.includes('desvio') || lowerKey.includes('limite') || lowerKey.includes('valor') || lowerKey.includes('indice') || lowerKey.includes('quantidade') || lowerKey.includes('faturamento') || lowerKey.includes('consumo') || lowerKey.includes('medido') || lowerKey.includes('ead') || lowerKey.includes('vazao') || lowerKey.includes('pressao') || lowerKey.includes('nivel')) {
-                                            newRow[key] = globalCleanAndParseNumber(row[key] as string);
-                                        } else {
-                                            newRow[key] = row[key];
-                                        }
-                                    }
-                                }
-                                return newRow;
-                            });
-                            resolve(transformedData);
-                        },
-                        error: (error: ParseError) => reject(error),
-                    });
-                });
-                const headers = parsedData.length > 0 ? Object.keys(parsedData[0]) : [];
-                const newFile: ImportedFile = {
-                    id: `${file.name}-${referenceDate}-${fileCategory}-${Date.now()}`, name: file.name, size: file.size, type: file.type,
-                    fileCategory, referenceDate, importDate: new Date(), data: parsedData, headers: headers,
-                };
-                addImportedFile(newFile);
-                importSuccessCount++;
-            } catch (error) {
-                console.error(`Erro ao importar ${file.name}:`, error);
-                showToast(`Erro ao processar o arquivo "${file.name}".`, 'error');
-            }
-        }
-        if (importSuccessCount > 0) {
-            showToast(`${importSuccessCount} arquivo(s) importado(s) com sucesso!`, 'success');
-        }
-        setSelectedFilesList([]);
-        setFileCategories({});
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        setIsLoading(false);
-        if (importSuccessCount > 0) onClose();
-    };
-
-    return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Importar Arquivos CSV" size="xl"
-            footer={
-                <div className="flex justify-end space-x-3 pt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300">Cancelar</button>
-                    <button type="button" onClick={handleImport} disabled={selectedFilesList.length === 0} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 flex items-center">
-                        <UploadCloud size={18} className="mr-2" /> Importar ({selectedFilesList.length})
-                    </button>
-                </div>
-            }
-        >
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-                <div>
-                    <label htmlFor="referenceDateModal" className="block text-sm font-medium text-gray-700 mb-1">Data de Referência dos Arquivos</label>
-                    <input type="date" id="referenceDateModal" value={referenceDate} onChange={(e) => setReferenceDate(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Selecionar Arquivos CSV</label>
-                    <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-500 transition-colors">
-                        <div className="space-y-1 text-center">
-                            <UploadCloud className="mx-auto h-12 w-12 text-gray-400" />
-                            <div className="flex text-sm text-gray-600">
-                                <label htmlFor="file-upload-modal" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
-                                    <span>Carregar arquivos</span>
-                                    <input id="file-upload-modal" name="file-upload-modal" type="file" className="sr-only" multiple onChange={handleFileChange} accept=".csv" ref={fileInputRef} />
-                                </label>
-                                <p className="pl-1">ou arraste e solte</p>
-                            </div>
-                            <p className="text-xs text-gray-500">Apenas arquivos CSV</p>
-                        </div>
-                    </div>
-                </div>
-                {selectedFilesList.length > 0 && (
-                    <div>
-                        <h3 className="text-sm font-medium text-gray-700 mb-2">Arquivos Selecionados:</h3>
-                        <ul className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-md p-2">
-                            {selectedFilesList.map((f: File) => (
-                                <li key={f.name} className="flex flex-col sm:flex-row justify-between sm:items-center p-2 bg-gray-50 rounded-md gap-2">
-                                    <div className="flex items-center space-x-2 flex-grow min-w-0">
-                                        <FileText size={18} className="text-green-600 flex-shrink-0" />
-                                        <span className="text-sm text-gray-700 truncate" title={f.name}>{f.name}</span>
-                                        <span className="text-xs text-gray-500 whitespace-nowrap">({(f.size / 1024).toFixed(1)} KB)</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2 mt-2 sm:mt-0 flex-shrink-0">
-                                        <select
-                                            value={fileCategories[f.name] || 'Outros'}
-                                            onChange={(e) => handleCategoryChange(f.name, e.target.value as FileTypeCategory)}
-                                            className="p-1 border border-gray-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                        >
-                                            {fileTypeCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                        </select>
-                                        <button onClick={() => removeFileFromSelection(f.name)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={16} /></button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
-            </div>
-        </Modal>
-    );
+  );
 };
 
-const ImportedFilesListRemoved: React.FC = () => { 
-    return null;
-};
-
-
-interface MenuItemRenderProps {
-    active: boolean;
-    disabled: boolean;
+function sortData<T extends { name: string }>(data: T[], option: string, key: keyof T | 'name'): T[] {
+  switch (option) {
+    case 'a-z':
+      return [...data].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    case 'z-a':
+      return [...data].sort((a, b) => String(b.name).localeCompare(String(a.name)));
+    case 'crescente':
+      return [...data].sort((a, b) => (a[key] as number) - (b[key] as number));
+    case 'decrescente':
+      return [...data].sort((a, b) => (b[key] as number) - (a[key] as number));
+    default:
+      return data;
+  }
 }
 
-interface MenuItemProps {
-    children: (props: MenuItemRenderProps) => ReactNode;
-    disabled?: boolean;
-    className?: string;
-    onClick?: () => void;
+function filterByRange<T>(data: T[], range: [number, number], key: keyof T): T[] {
+  return data.filter(item => {
+    const value = item[key] as unknown as number;
+    return value >= range[0] && value <= range[1];
+  });
 }
 
-const Menu: React.FC<{ children: ReactNode, as?: ElementType, className?: string }> & {
-    Button: React.FC<Omit<ComponentPropsWithoutRef<'button'>, 'children'> & { children: ReactNode, onClick?: (e: React.MouseEvent) => void }>;
-    Items: React.FC<Omit<ComponentPropsWithoutRef<'div'>, 'children'> & { children: ReactNode }>;
-    Item: React.FC<MenuItemProps>;
-} = ({ children, as: Component = 'div', ...props }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
+export const Dashboard = ({
+  importedFilesHistory,
+  activeFileId,
+  onFileImportedOrUpdated,
+  onFileSelected,
+  onFileDeleted,
+  onFileDateEdited,
+  navigateToPlanilha,
+  onLogout,
+}: DashboardProps): ReactElement => {
+  const mainFileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+  const [fileToEditId, setFileToEditId] = useState<string | null>(null);
 
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+  const [perdaAnualDataLocal, setPerdaAnualDataLocal] = useState<{name: string, value: number}[]>([]);
+  const [gastosMunicipiosDataLocal, setGastosMunicipiosDataLocal] = useState<{name: string, manutencoes: number, valor: number}[]>([]);
+  const [perdasMunicipioDataLocal, setPerdasMunicipioDataLocal] = useState<{name: string, manutencao: number, faltaAgua: number, semAcesso: number}[]>([]);
+  const [volumeTotalDataLocal, setVolumeTotalDataLocal] = useState<{name: string, produzido: number, consumido: number}[]>([]);
+  const [balancoVolumesDataLocal, setBalancoVolumesDataLocal] = useState<BalancoVolumeData[]>([]);
+  const [rawDataLocal, setRawDataLocal] = useState<CsvData[]>([]);
+  const [activeFileNameLocal, setActiveFileNameLocal] = useState<string | null>(null);
+  const [activeFileDateLocal, setActiveFileDateLocal] = useState<Date | undefined>(new Date());
+  
+  const [sortOptionBalanco, setSortOptionBalanco] = useState<string>('decrescente');
+  const [sortKeyBalanco, setSortKeyBalanco] = useState<keyof BalancoVolumeData | 'name'>('distribuido');
+  const [balancoRange, setBalancoRange] = useState<[number, number]>([0, 10000]);
+  const [maxBalanco, setMaxBalanco] = useState<number>(10000);
+  const [filterKeyBalanco, setFilterKeyBalanco] = useState<keyof BalancoVolumeData>('distribuido');
 
-    const toggleMenu = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsOpen(o => !o);
-    };
+  const [evolucaoDistribuidoData, setEvolucaoDistribuidoData] = useState<EvolucaoDataPoint[]>([]);
+  const [evolucaoConsumidoData, setEvolucaoConsumidoData] = useState<EvolucaoDataPoint[]>([]);
+  const [evolucaoPerdidoData, setEvolucaoPerdidoData] = useState<EvolucaoDataPoint[]>([]);
+  const [municipiosListEvolucao, setMunicipiosListEvolucao] = useState<string[]>([]);
+  const [selectedMunicipioEvolucao, setSelectedMunicipioEvolucao] = useState<string>('COMPESA');
 
-    const childrenWithToggle = React.Children.map(children, (child) => {
-        if (React.isValidElement(child) && (child.type as any).displayName === 'MenuButton') {
-            return React.cloneElement(child as React.ReactElement<any>, { onClick: toggleMenu });
-        }
-        return child;
+  const [uploading, setUploading] = useState(false);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  
+  const [sortOptionPerda, setSortOptionPerda] = useState<string>('decrescente');
+  const [sortOptionPerdasLocal, setSortOptionPerdasLocal] = useState<string>('decrescente');
+  
+  const [maxPerda, setMaxPerda] = useState<number>(10000);
+  const [maxPerdas, setMaxPerdas] = useState<number>(10000);
+  const [maxVolume, setMaxVolume] = useState<number>(10000);
+  
+  const [perdaRange, setPerdaRange] = useState<[number, number]>([0, 10000]);
+  const [perdasRange, setPerdasRange] = useState<[number, number]>([0, 10000]);
+  const [volumeRange, setVolumeRange] = useState<[number, number]>([0, 10000]);
+
+  const compesaColors = {
+    primary: '#003F9C',
+    secondary: '#5D8BF4',
+    tertiary: '#85A6F2',
+    background: '#F0F5FF',
+    text: '#1A2C56',
+    red: '#E53E3E',
+  };
+
+  const parseBrazilianNumber = useCallback((value: string): number => {
+    if (typeof value !== 'string') return 0;
+    const cleanedValue = value.replace(/\./g, '').replace(',', '.');
+    const number = parseFloat(cleanedValue);
+    return isNaN(number) ? 0 : number;
+  }, []);
+
+  const processAndStoreFileData = useCallback((fileId: string, fileName: string, importDate: Date, parsedData: CsvData[]) => {
+    const perdaAnualAcc: Record<string, number> = parsedData.reduce((acc: Record<string, number>, item: CsvData) => {
+      const municipio = item.Municipios;
+      const perda = parseBrazilianNumber(item.Perda);
+      if (municipio) acc[municipio] = (acc[municipio] || 0) + perda;
+      return acc;
+    }, {});
+    const newPerdaAnualData = Object.entries(perdaAnualAcc).map(([name, val]) => ({ name, value: val }));
+
+    const newGastosMunicipiosData = parsedData.map(item => ({
+      name: item.Municipios,
+      manutencoes: Math.floor(parseBrazilianNumber(item.Perda) / 10000),
+      valor: parseBrazilianNumber(item.VD)
+    }));
+
+    const newPerdasMunicipioData = parsedData.map(item => ({
+      name: item.Municipios,
+      manutencao: parseBrazilianNumber(item.Perda) * 0.6,
+      faltaAgua: parseBrazilianNumber(item.Perda) * 0.3,
+      semAcesso: parseBrazilianNumber(item.Perda) * 0.1
+    }));
+
+    const newVolumeTotalData = parsedData.map(item => ({
+      name: item.Municipios,
+      produzido: parseBrazilianNumber(item['Volume Produzido']),
+      consumido: parseBrazilianNumber(item['Volume Consumido'])
+    }));
+
+    const newBalancoData = parsedData.map(item => {
+      const distribuido = parseBrazilianNumber(item['Volume Produzido']);
+      const consumido = parseBrazilianNumber(item['Volume Consumido']);
+      return {
+        name: item.Municipios,
+        distribuido,
+        consumido,
+        perdaVolume: distribuido - consumido,
+      };
     });
 
-    return (
-        <GlobalMenuContext.Provider value={{ open: isOpen }}>
-            <Component ref={menuRef} {...props} >{childrenWithToggle}</Component>
-        </GlobalMenuContext.Provider>
-    );
-};
+    const fileEntry: ImportedFileEntry = {
+      id: fileId,
+      fileName,
+      importDate,
+      rawData: parsedData,
+      perdaAnualData: newPerdaAnualData,
+      gastosMunicipiosData: newGastosMunicipiosData,
+      perdasMunicipioData: newPerdasMunicipioData,
+      volumeTotalData: newVolumeTotalData,
+      balancoVolumesData: newBalancoData,
+    };
+    onFileImportedOrUpdated(fileEntry);
+  }, [parseBrazilianNumber, onFileImportedOrUpdated]);
 
-const MenuButton: React.FC<Omit<ComponentPropsWithoutRef<'button'>, 'children'> & { children: ReactNode, onClick?: (e: React.MouseEvent) => void }> = ({ children, onClick, ...props }) => <button onClick={onClick} {...props}>{children}</button>;
-MenuButton.displayName = 'MenuButton';
-Menu.Button = MenuButton;
+  useEffect(() => {
+    let isMounted = true;
+    const currentFile = activeFileId ? importedFilesHistory.find(f => f.id === activeFileId) : null;
 
-Menu.Items = ({ children, ...props }) => {
-    const { open } = useContext(GlobalMenuContext);
-    if (!open) return null;
-    return <div {...props}>{children}</div>;
-};
-Menu.Items.displayName = 'MenuItems';
+    if (currentFile && isMounted) {
+      setPerdaAnualDataLocal(currentFile.perdaAnualData);
+      setGastosMunicipiosDataLocal(currentFile.gastosMunicipiosData);
+      setPerdasMunicipioDataLocal(currentFile.perdasMunicipioData);
+      setVolumeTotalDataLocal(currentFile.volumeTotalData);
+      setBalancoVolumesDataLocal(currentFile.balancoVolumesData);
+      setRawDataLocal(currentFile.rawData);
+      setActiveFileNameLocal(currentFile.fileName);
+      setActiveFileDateLocal(currentFile.importDate);
 
-Menu.Item = ({ children, disabled = false, className = '', onClick, ...rest }) => {
-    return (
-        <div
-            {...rest}
-            className={`${className || ''} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            onClick={disabled ? undefined : onClick}
-        >
-            {children({ active: false, disabled })}
+      const uniqueMunicipios = Array.from(new Set(currentFile.rawData.map((item: CsvData) => item.Municipios))).sort();
+      setMunicipiosListEvolucao(uniqueMunicipios);
+    } else if (isMounted) {
+      setPerdaAnualDataLocal([]);
+      setGastosMunicipiosDataLocal([]);
+      setPerdasMunicipioDataLocal([]);
+      setVolumeTotalDataLocal([]);
+      setBalancoVolumesDataLocal([]);
+      setRawDataLocal([]);
+      setActiveFileNameLocal(null);
+      setActiveFileDateLocal(new Date());
+      setMunicipiosListEvolucao([]);
+    }
+    return () => { isMounted = false; };
+  }, [activeFileId, importedFilesHistory]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (perdaAnualDataLocal.length > 0 && isMounted) {
+      const maxVal = Math.max(...perdaAnualDataLocal.map(item => item.value));
+      const newMax = Math.ceil(maxVal / 100) * 100 || 10000;
+      setMaxPerda(newMax);
+      setPerdaRange(prevRange => (prevRange[1] === 10000 && newMax > 10000) || prevRange[1] < newMax || prevRange[0] > newMax ? [0, newMax] : prevRange);
+    }
+    if (perdasMunicipioDataLocal.length > 0 && isMounted) {
+        const maxVal = Math.max(...perdasMunicipioDataLocal.map((item) => item.manutencao));
+        const newMax = Math.ceil(maxVal / 100) * 100 || 10000;
+        setMaxPerdas(newMax); 
+        setPerdasRange(prevRange => (prevRange[1] === 10000 && newMax > 10000) || prevRange[1] < newMax || prevRange[0] > newMax ? [0, newMax] : prevRange);
+    }
+    if (volumeTotalDataLocal.length > 0 && isMounted) {
+        const maxVal = Math.max(...volumeTotalDataLocal.map((item) => item.produzido));
+        const newMax = Math.ceil(maxVal / 100) * 100 || 10000;
+        setMaxVolume(newMax); 
+        setVolumeRange(prevRange => (prevRange[1] === 10000 && newMax > 10000) || prevRange[1] < newMax || prevRange[0] > newMax ? [0, newMax] : prevRange);
+    }
+    if (balancoVolumesDataLocal.length > 0 && isMounted) {
+      const maxVal = Math.max(
+        ...balancoVolumesDataLocal.map(item => Math.max(item.distribuido, item.consumido, item.perdaVolume))
+      );
+      const newMax = Math.ceil(maxVal / 100) * 100 || 10000;
+        setMaxBalanco(newMax);
+        setBalancoRange(prevRange => (prevRange[1] === 10000 && newMax > 10000) || prevRange[1] < newMax || prevRange[0] > newMax ? [0, newMax] : prevRange);
+    }
+     return () => { isMounted = false; };
+  }, [perdaAnualDataLocal, perdasMunicipioDataLocal, volumeTotalDataLocal, balancoVolumesDataLocal]);
+
+
+  const handleMainImportClick = () => mainFileInputRef.current?.click();
+
+  const clearActiveFileView = useCallback(() => {
+    onFileSelected(null);
+  }, [onFileSelected]);
+
+  const handleFileUploadLocal = useCallback((event: React.ChangeEvent<HTMLInputElement>, editingFileId: string | null = null) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    
+    (Papa as any).parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results: ParseResult<CsvData>) => {
+        const parsedData: CsvData[] = (results.data as CsvData[]).filter(
+            (item): item is CsvData => !!(item && item.Id && item.Municipios)
+        );
+        
+        const fileIdToUse = editingFileId || crypto.randomUUID();
+        const dateToUse = editingFileId 
+          ? importedFilesHistory.find(f => f.id === editingFileId)?.importDate || new Date()
+          : new Date();
+
+        processAndStoreFileData(fileIdToUse, file.name, dateToUse, parsedData);
+        setUploading(false);
+        if (editingFileId) setFileToEditId(null);
+      },
+      error: (error: PapaParseErrorAliased) => {
+        console.error("Error processing CSV:", error.message, error.errors);
+        setUploading(false);
+        if (editingFileId) setFileToEditId(null);
+      }
+    });
+    if (event.target) event.target.value = '';
+  }, [importedFilesHistory, processAndStoreFileData]);
+
+  useEffect(() => {
+    if (!rawDataLocal.length || !activeFileId) {
+      setEvolucaoDistribuidoData([]);
+      setEvolucaoConsumidoData([]);
+      setEvolucaoPerdidoData([]);
+      return;
+    }
+
+    let dist = 0, cons = 0, lossVol = 0;
+
+    if (selectedMunicipioEvolucao === 'COMPESA') {
+      rawDataLocal.forEach((item: CsvData) => {
+        const p = parseBrazilianNumber(item['Volume Produzido']);
+        const c = parseBrazilianNumber(item['Volume Consumido']);
+        dist += p;
+        cons += c;
+      });
+      lossVol = dist - cons;
+    } else {
+      const municipioData = rawDataLocal.find(item => item.Municipios === selectedMunicipioEvolucao);
+      if (municipioData) {
+        dist = parseBrazilianNumber(municipioData['Volume Produzido']);
+        cons = parseBrazilianNumber(municipioData['Volume Consumido']);
+        lossVol = dist - cons;
+      }
+    }
+    setEvolucaoDistribuidoData(MOCK_MONTHS.map(m => ({ month: m, value: dist })));
+    setEvolucaoConsumidoData(MOCK_MONTHS.map(m => ({ month: m, value: cons })));
+    setEvolucaoPerdidoData(MOCK_MONTHS.map(m => ({ month: m, value: lossVol })));
+  }, [rawDataLocal, selectedMunicipioEvolucao, parseBrazilianNumber, activeFileId]);
+
+  const generatePDFReport = useCallback(() => {
+    if (!rawDataLocal.length) return;
+    const doc = new jsPDF();
+    doc.setFontSize(18);
+    doc.setTextColor(compesaColors.primary);
+    doc.text('Relatório COMPESA', 105, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, 105, 30, { align: 'center' });
+    if(activeFileNameLocal) doc.text(`Arquivo: ${activeFileNameLocal}`, 105, 35, {align: 'center'});
+
+    let yPosition = 45;
+    rawDataLocal.forEach((item, index) => {
+      if (yPosition > 260 && index < rawDataLocal.length - 1) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      doc.setFontSize(10);
+      doc.setTextColor(compesaColors.primary);
+      doc.text(`Município: ${item.Municipios}`, 14, yPosition);
+      doc.setTextColor(compesaColors.text);
+      doc.text(`Perda Anual: ${parseBrazilianNumber(item.Perda).toLocaleString('pt-BR')}`, 14, yPosition + 5);
+      doc.text(`Volume Produzido: ${parseBrazilianNumber(item['Volume Produzido']).toLocaleString('pt-BR')} m³/h`, 14, yPosition + 10);
+      doc.text(`Volume Consumido: ${parseBrazilianNumber(item['Volume Consumido']).toLocaleString('pt-BR')} m³/h`, 14, yPosition + 15);
+      yPosition += 25;
+    });
+    doc.save(`relatorio_compesa_${activeFileNameLocal ? activeFileNameLocal.split('.')[0] : 'geral'}_${new Date().toISOString().slice(0,10)}.pdf`);
+  }, [rawDataLocal, compesaColors, parseBrazilianNumber, activeFileNameLocal]);
+
+  const generateCSVReport = useCallback(() => {
+    if (!rawDataLocal.length) return;
+    const csv = (Papa as any).unparse(rawDataLocal);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `relatorio_compesa_${activeFileNameLocal ? activeFileNameLocal.split('.')[0] : 'geral'}_${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }, [rawDataLocal, activeFileNameLocal]);
+
+  const handleSliderChange = useCallback((setter: Dispatch<SetStateAction<[number, number]>>) => {
+    return (newValue: number[]) => {
+      if (newValue.length === 2) setter([newValue[0], newValue[1]]);
+    };
+  }, []);
+  
+  const handleTriggerEditFile = (fileId: string) => {
+    setFileToEditId(fileId);
+    editFileInputRef.current?.click();
+  };
+
+  const processedPerdaData = filterByRange(sortData(perdaAnualDataLocal, sortOptionPerda, 'value'), perdaRange, 'value');
+  const processedPerdasData = filterByRange(sortData(perdasMunicipioDataLocal, sortOptionPerdasLocal, 'manutencao'), perdasRange, 'manutencao');
+  
+  const processedBalancoData = filterByRange(
+    sortData(balancoVolumesDataLocal, sortOptionBalanco, sortKeyBalanco),
+    balancoRange,
+    filterKeyBalanco
+  );
+
+  return (
+    <main className="min-h-screen bg-[#F0F5FF] p-4">
+      <header className="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm">
+        <img src="https://servicos.compesa.com.br/wp-content/uploads/2022/07/compesa-h.png" alt="Compesa Logo" className="h-12" />
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3" disabled={!activeFileId}>
+                <Calendar className="h-3 w-3 sm:h-4 sm:w-4" />
+                {activeFileDateLocal ? format(activeFileDateLocal, "dd/MM/yy", { locale: ptBR }) : "Data"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <CalendarComp 
+                mode="single" 
+                selected={activeFileDateLocal} 
+                onSelect={(newDate) => {
+                  if (activeFileId && newDate) {
+                    onFileDateEdited(activeFileId, newDate);
+                  }
+                }} 
+                locale={ptBR} 
+              />
+            </PopoverContent>
+          </Popover>
+          
+          <Button variant="outline" className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3" onClick={handleMainImportClick}>
+            <Upload className="h-3 w-3 sm:h-4 sm:w-4" /> Importar
+          </Button>
+          <input type="file" ref={mainFileInputRef} accept=".csv" onChange={(e) => handleFileUploadLocal(e)} className="hidden" />
+          <input type="file" ref={editFileInputRef} accept=".csv" onChange={(e) => { if(fileToEditId) handleFileUploadLocal(e, fileToEditId)}} className="hidden" />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3" disabled={importedFilesHistory.length === 0}>
+                <FileText className="h-3 w-3 sm:h-4 sm:w-4" /> Arquivos ({importedFilesHistory.length}) <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 sm:w-64 max-h-80 overflow-y-auto">
+              <DropdownMenuLabel>Arquivos Importados</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {importedFilesHistory.length === 0 && <DropdownMenuItem disabled>Nenhum arquivo importado</DropdownMenuItem>}
+              {importedFilesHistory.map(file => (
+                <DropdownMenuGroup key={file.id}>
+                  <div className="flex items-center justify-between px-2 py-1.5 text-sm hover:bg-accent rounded-sm">
+                    <span 
+                      className={`cursor-pointer truncate flex-grow ${activeFileId === file.id ? 'font-semibold text-primary' : ''}`}
+                      title={file.fileName}
+                      onClick={() => onFileSelected(file.id)}
+                    >
+                      {file.fileName} ({format(file.importDate, "dd/MM/yy")})
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 ml-1 flex-shrink-0">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="right" align="start">
+                        <DropdownMenuItem onClick={() => onFileSelected(file.id)}>
+                          <FileText className="mr-2 h-4 w-4" /> Selecionar
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button variant="ghost" className="w-full justify-start px-2 py-1.5 text-sm font-normal relative flex cursor-default select-none items-center rounded-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
+                                    <Calendar className="mr-2 h-4 w-4" /> Editar Data
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" side="right" align="start">
+                                <CalendarComp
+                                    mode="single"
+                                    selected={file.importDate}
+                                    onSelect={(newDate) => {if(newDate) onFileDateEdited(file.id, newDate)}}
+                                />
+                            </PopoverContent>
+                        </Popover>
+                        <DropdownMenuItem onClick={() => handleTriggerEditFile(file.id)}>
+                          <Upload className="mr-2 h-4 w-4" /> Substituir Arquivo
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onFileDeleted(file.id)} className="text-red-600 focus:bg-red-50 focus:text-red-600">
+                          <Trash2 className="mr-2 h-4 w-4" /> Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </DropdownMenuGroup>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button variant="outline" className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3" onClick={navigateToPlanilha} disabled={!activeFileId}>
+            <Sheet className="h-3 w-3 sm:h-4 sm:w-4" /> Planilha
+          </Button>
+
+          <DropdownMenu onOpenChange={setExportDropdownOpen}>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3" disabled={!activeFileId}>
+                <Download className="h-3 w-3 sm:h-4 sm:w-4" /> Exportar <ChevronDown className={`h-3 w-3 sm:h-4 sm:w-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-40 sm:w-48">
+              <DropdownMenuItem onClick={generateCSVReport} className="cursor-pointer focus:bg-[#003F9C]/10">Exportar como CSV</DropdownMenuItem>
+              <DropdownMenuItem onClick={generatePDFReport} className="cursor-pointer focus:bg-[#003F9C]/10">Exportar como PDF</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 focus:outline-none">
+              <span className="hidden md:block text-sm font-medium text-[#1A2C56]">Admin</span>
+              <Avatar className="w-8 h-8 sm:w-10 sm:h-10 border-2 border-[#85A6F2]"><AvatarImage src="https://github.com/shadcn.png" /><AvatarFallback className="bg-[#85A6F2] text-white font-medium text-xs sm:text-sm">AD</AvatarFallback></Avatar>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56">
+              <DropdownMenuLabel><div className="flex flex-col"><span className="font-medium">Administrador</span><span className="text-xs text-gray-500">admin@compesa.com.br</span></div></DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onLogout} className="cursor-pointer text-red-500 focus:bg-red-50 focus:text-red-600">
+                <LogOut className="mr-2 h-4 w-4" /> Sair
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-    );
-};
-Menu.Item.displayName = 'MenuItem';
+      </header>
 
-const getWeekNumber = (d: Date): number => {
-    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-    return weekNo;
-};
+      {activeFileNameLocal && (
+        <div className="flex justify-between items-center mb-4 bg-[#85A6F2]/20 p-3 rounded-lg">
+          <span className="text-sm text-[#003F9C]">Visualizando: {activeFileNameLocal} (Importado em: {activeFileDateLocal ? format(activeFileDateLocal, "dd/MM/yyyy HH:mm") : 'N/A'})</span>
+          <Button variant="ghost" size="sm" onClick={clearActiveFileView} className="text-[#003F9C] hover:bg-[#003F9C]/10 p-1"><X className="h-4 w-4" /> Limpar Visualização</Button>
+        </div>
+      )}
+      {uploading && (
+        <div className="flex justify-center items-center mb-4 bg-[#85A6F2]/20 p-3 rounded-lg">
+          <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-[#003F9C] mr-2"></div>
+          <span className="text-sm text-[#003F9C]">Processando arquivo...</span>
+        </div>
+      )}
 
-const DashboardPage: React.FC = () => {
-    const { 
-        showToast, setIsLoading, selectedFileForDashboard, importedFiles, 
-        setSelectedFileForDashboard: globalSetSelectedFileForDashboard,
-        setSelectedFileForPlanilha 
-    } = useAppContext();
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+      {!activeFileId && importedFilesHistory.length > 0 && (
+        <div className="text-center py-10 bg-white rounded-lg shadow-sm mb-6">
+          <FileText className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum arquivo selecionado</h3>
+          <p className="mt-1 text-sm text-gray-500">Selecione um arquivo da lista de importados para visualizar os dados.</p>
+        </div>
+      )}
 
-    const [kpis, setKpis] = useState(defaultKpis);
-    const [balancoVolumesData, setBalancoVolumesData] = useState(defaultBalançoVolumes);
-    const [selectedMunicipality, setSelectedMunicipality] = useState<string | null>(null);
-    const [uniqueMunicipalities, setUniqueMunicipalities] = useState<string[]>([]);
-    const [periodAggregation, setPeriodAggregation] = useState<PeriodAggregation>('Mensal');
-
-    const getColumnKey = (headers: string[], keywords: string[], defaultKey: string): string => {
-        const originalHeaders = headers; 
-        const lowerTransformedHeaders = headers.map(h => globalTransformHeader(h)); 
-    
-        for (const keyword of keywords) {
-            const transformedKeyword = globalTransformHeader(keyword);
-            const foundIndex = lowerTransformedHeaders.findIndex(h => h.includes(transformedKeyword));
-            if (foundIndex > -1) return originalHeaders[foundIndex]; 
-        }
-        
-        const transformedDefaultKey = globalTransformHeader(defaultKey);
-        const defaultIndex = lowerTransformedHeaders.findIndex(h => h === transformedDefaultKey);
-        if (defaultIndex > -1) return originalHeaders[defaultIndex];
-        
-        for (const keyword of keywords) {
-            const foundIndex = originalHeaders.findIndex(h => h.toLowerCase().includes(keyword.toLowerCase()));
-            if (foundIndex > -1) return originalHeaders[foundIndex];
-        }
-        const originalDefaultIndex = originalHeaders.findIndex(h => h.toLowerCase() === defaultKey.toLowerCase());
-        if (originalDefaultIndex > -1) return originalHeaders[originalDefaultIndex];
-
-        return defaultKey; 
-    };
-    
-    const parseDateRobust = (dateStr: string | number | null | undefined): Date | null => {
-        if (dateStr === null || dateStr === undefined || String(dateStr).trim() === '' || String(dateStr).toLowerCase() === 'n/a') {
-            return null;
-        }
-        const sDateStr = String(dateStr).trim();
-        let parts: RegExpMatchArray | string[] | null; 
-            
-        parts = sDateStr.match(/^(\d{1,2})[/-](\d{4})$/); 
-        if (parts && parts.length === 3) {
-            const month = parseInt(parts[1], 10) - 1;
-            const year = parseInt(parts[2], 10);
-            if (!isNaN(month) && !isNaN(year) && month >= 0 && month < 12 && year > 1900 && year < 2100) {
-                return new Date(year, month, 1);
-            }
-        }
-        
-        parts = sDateStr.match(/^(\d{4})[/-](\d{1,2})$/); 
-        if (parts && parts.length === 3) {
-            const year = parseInt(parts[1], 10);
-            const month = parseInt(parts[2], 10) - 1;
-            if (!isNaN(year) && !isNaN(month) && month >= 0 && month < 12 && year > 1900 && year < 2100) {
-                return new Date(year, month, 1);
-            }
-        }
-    
-        let splitParts = sDateStr.split(/[/-]/);
-        if (splitParts.length === 3) {
-            const p1 = parseInt(splitParts[0], 10);
-            const p2 = parseInt(splitParts[1], 10);
-            const p3 = parseInt(splitParts[2], 10);
-    
-            if (!isNaN(p1) && !isNaN(p2) && !isNaN(p3)) {
-                if (splitParts[0].length === 4 && p2 >= 1 && p2 <= 12 && p1 > 1900 && p1 < 2100) return new Date(p1, p2 - 1, p3);
-                if (splitParts[2].length === 4 && p2 >= 1 && p2 <= 12 && p3 > 1900 && p3 < 2100) return new Date(p3, p2 - 1, p1);
-                if (splitParts[2].length === 4 && p1 >= 1 && p1 <= 12 && p3 > 1900 && p3 < 2100) return new Date(p3, p1 - 1, p2);
-            }
-        }
-            
-        const parsed = new Date(sDateStr); 
-        if (!isNaN(parsed.getTime())) {
-            const year = parsed.getFullYear();
-            if (year > 1900 && year < 2100) return parsed;
-        }
-        return null;
-    };
-    
-
-    const evolucaoData = useMemo(() => {
-        if (!selectedFileForDashboard || !selectedFileForDashboard.data.length) return defaultEvolucaoData;
-    
-        const dataToProcess = selectedFileForDashboard.data;
-        const headers = selectedFileForDashboard.headers;
-    
-        const municipioKey = getColumnKey(headers, ['municipio', 'município', 'localidade', 'cidade'], 'municipio');
-        const periodoKeyOriginal = getColumnKey(headers, ['mes_ano_referencia', 'data', 'periodo', 'competencia', 'mês', 'mesano', 'data_ref'], 'mes_ano_referencia');
-        const volDistKey = getColumnKey(headers, ['volume_distribuido', 'vol_dist', 'distribuido', 'vol_distribuido_m3'], 'volume_distribuido');
-        const volConsKey = getColumnKey(headers, ['volume_consumido', 'vol_cons', 'consumido', 'faturado', 'vol_consumido_m3', 'vol_faturado_m3'], 'volume_consumido');
-        const perdaKey = getColumnKey(headers, ['perda_total', 'perdas', 'perda', 'perda_m3'], 'perda_total');
-    
-        const filteredByMunicipality = selectedMunicipality
-            ? dataToProcess.filter(d => String(d[municipioKey]).trim().toLowerCase() === selectedMunicipality.trim().toLowerCase())
-            : dataToProcess;
-    
-        const aggregated: Record<string, {
-            periodo: string;
-            volume_distribuido: number;
-            volume_consumido: number;
-            perda_total: number;
-            count: number;
-            dateObject?: Date;
-        }> = {};
-    
-        filteredByMunicipality.forEach(d => {
-            const dateValue = parseDateRobust(d[periodoKeyOriginal]);
-            if (!dateValue) return;
-
-            let aggKey: string; 
-            let displayPeriodo: string; 
-
-            switch (periodAggregation) {
-                case 'Diário':
-                    aggKey = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}-${String(dateValue.getDate()).padStart(2, '0')}`;
-                    displayPeriodo = dateValue.toLocaleDateString('pt-BR', {day: '2-digit', month: 'short', year: 'numeric'});
-                    break;
-                case 'Semanal':
-                    const yearW = dateValue.getFullYear();
-                    const week = getWeekNumber(dateValue);
-                    aggKey = `${yearW}-S${String(week).padStart(2, '0')}`;
-                    displayPeriodo = aggKey;
-                    break;
-                case 'Anual':
-                    aggKey = `${dateValue.getFullYear()}`;
-                    displayPeriodo = aggKey;
-                    break;
-                case 'Mensal':
-                default:
-                    aggKey = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}`;
-                    displayPeriodo = `${String(dateValue.getMonth() + 1).padStart(2, '0')}/${dateValue.getFullYear()}`;
-                    break;
-            }
-            
-            if (!aggregated[aggKey]) {
-                aggregated[aggKey] = { periodo: displayPeriodo, volume_distribuido: 0, volume_consumido: 0, perda_total: 0, count: 0, dateObject: dateValue };
-            }
-            aggregated[aggKey].volume_distribuido += Number(d[volDistKey] || 0);
-            aggregated[aggKey].volume_consumido += Number(d[volConsKey] || 0);
-            aggregated[aggKey].perda_total += Number(d[perdaKey] || 0);
-            aggregated[aggKey].count++;
-        });
-        
-        return Object.values(aggregated)
-        .map(item => ({...item, mes_ano_referencia: item.periodo })) 
-        .sort((a, b) => {
-            const dateA = a.dateObject || parseDateRobust(a.periodo) || new Date(0); 
-            const dateB = b.dateObject || parseDateRobust(b.periodo) || new Date(0);
-            return dateA.getTime() - dateB.getTime();
-        });
-    
-    }, [selectedFileForDashboard, selectedMunicipality, periodAggregation]);
+       {!activeFileId && importedFilesHistory.length === 0 && !uploading && (
+        <div className="text-center py-10 bg-white rounded-lg shadow-sm mb-6">
+          <Upload className="mx-auto h-12 w-12 text-gray-400" />
+          <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum arquivo importado</h3>
+          <p className="mt-1 text-sm text-gray-500">Importe um arquivo CSV para começar a visualizar os dados.</p>
+        </div>
+      )}
 
 
-    useEffect(() => {
-        if (selectedFileForDashboard && selectedFileForDashboard.data.length > 0) {
-            const data = selectedFileForDashboard.data;
-            const headers = selectedFileForDashboard.headers;
-
-            const municipioKey = getColumnKey(headers, ['municipio', 'município', 'localidade', 'cidade'], 'municipio');
-            const periodoKeyOriginal = getColumnKey(headers, ['mes_ano_referencia', 'data', 'periodo', 'competencia', 'mês', 'mesano', 'data_ref'], 'mes_ano_referencia');
-            const volDistKey = getColumnKey(headers, ['volume_distribuido', 'vol_dist', 'distribuido', 'vol_distribuido_m3'], 'volume_distribuido');
-            const volConsKey = getColumnKey(headers, ['volume_consumido', 'vol_cons', 'consumido', 'faturado', 'vol_consumido_m3', 'vol_faturado_m3'], 'volume_consumido');
-            const perdaKey = getColumnKey(headers, ['perda_total', 'perdas', 'perda', 'perda_m3'], 'perda_total');
-            const statusKey = getColumnKey(headers, ['status_perda', 'status', 'classificacao', 'situação', 'risco'], 'status_perda');
-            const eadKey = getColumnKey(headers, ['ead', 'eficiencia_arrecadacao', 'arrecadacao_eficiencia', 'índice_arrecadação', 'eficiencia'], 'ead');
-
-
-            let totalDistAcumulado = 0;
-            let totalPerdaUltimoMes = 0;
-            let totalEadUltimoMes = 0;
-            let countEadUltimoMes = 0;
-
-            const municipiosCriticosSet = new Set<string>();
-            const balancoPorMunicipio: Record<string, { municipio: string, 'Mês/Ano Referência': string, 'Volume Distribuído': number, 'Volume Consumido': number, 'Perda Total': number }> = {};
-            
-            const muniList = [...new Set(data.map(d => String(d[municipioKey]).trim()).filter(m => m && m.toLowerCase() !== 'null' && m.toLowerCase() !== 'undefined' && m.trim() !== ''))].sort();
-            setUniqueMunicipalities(muniList);
-
-            const datasUnicas = [...new Set(data.map(d => parseDateRobust(d[periodoKeyOriginal])).filter(d => d !== null) as Date[])]
-                .sort((a, b) => b.getTime() - a.getTime());
-                
-            const ultimoPeriodoDate = datasUnicas.length > 0 ? datasUnicas[0] : null;
-            const penultimoPeriodoDate = datasUnicas.length > 1 ? datasUnicas[1] : null;
-            let perdaPenultimoMes = 0;
-            
-            data.forEach(d => {
-                totalDistAcumulado += Number(d[volDistKey] || 0);
-                const currentDataDate = parseDateRobust(d[periodoKeyOriginal]);
-
-                if (ultimoPeriodoDate && currentDataDate && currentDataDate.getTime() === ultimoPeriodoDate.getTime()) {
-                    totalPerdaUltimoMes += Number(d[perdaKey] || 0);
-                    const eadValue = d[eadKey];
-                    if (typeof eadValue === 'number' && !isNaN(eadValue)) {
-                        totalEadUltimoMes += eadValue;
-                        countEadUltimoMes++;
-                    }
-                    const statusValue = String(d[statusKey]).toLowerCase();
-                    if (d[statusKey] && statusValue !== 'normal' && statusValue !== 'bom' && statusValue !== 'regular' && d[municipioKey]) {
-                        municipiosCriticosSet.add(String(d[municipioKey]));
-                    }
-                    if (d[municipioKey]) {
-                        balancoPorMunicipio[String(d[municipioKey])] = {
-                            municipio: String(d[municipioKey]),
-                            'Mês/Ano Referência': String(d[periodoKeyOriginal]),
-                            'Volume Distribuído': Number(d[volDistKey] || 0),
-                            'Volume Consumido': Number(d[volConsKey] || 0),
-                            'Perda Total': Number(d[perdaKey] || 0),
-                        };
-                    }
-                } else if (penultimoPeriodoDate && currentDataDate && currentDataDate.getTime() === penultimoPeriodoDate.getTime()) {
-                    perdaPenultimoMes += Number(d[perdaKey] || 0);
-                }
-            });
-            
-            const variacaoPerda = penultimoPeriodoDate && perdaPenultimoMes !== 0 ? ((totalPerdaUltimoMes - perdaPenultimoMes) / perdaPenultimoMes) * 100 : (totalPerdaUltimoMes !==0 ? Infinity : 0);
-            const eficienciaMediaArrecadacao = countEadUltimoMes > 0 ? (totalEadUltimoMes / countEadUltimoMes) : 0;
-
-
-            setKpis({
-                perdaTotalEstimada: totalPerdaUltimoMes,
-                municipiosCriticos: municipiosCriticosSet.size,
-                volumeDistribuidoTotal: totalDistAcumulado,
-                variacaoPerdaMesAnterior: variacaoPerda === Infinity ? 100 : variacaoPerda,
-                eficienciaArrecadacao: eficienciaMediaArrecadacao
-            });
-
-            const balancoArray = Object.values(balancoPorMunicipio);
-            setBalancoVolumesData(balancoArray.length > 0 ? balancoArray.sort((a,b) => a.municipio.localeCompare(b.municipio)) : defaultBalançoVolumes);
-
-            if (balancoArray.length === 0 && data.length > 0 && ultimoPeriodoDate) {
-                showToast("Balanço por município não gerado para o último período. Verifique colunas do arquivo.", "info");
-            }
-
-        } else {
-            setKpis(defaultKpis);
-            setBalancoVolumesData(defaultBalançoVolumes);
-            setSelectedMunicipality(null);
-            setUniqueMunicipalities([]);
-        }
-    }, [selectedFileForDashboard, showToast]);
-
-
-    const handleBarClick = (data: any) => {
-        if (data && data.activePayload && data.activePayload.length > 0) {
-            const municipioClicado = data.activePayload[0].payload.municipio;
-            setSelectedMunicipality(prev => prev === municipioClicado ? null : municipioClicado);
-        } else {
-            if (data && data.activeLabel && balancoVolumesData.some(item => item.municipio === data.activeLabel)) {
-                setSelectedMunicipality(prev => prev === data.activeLabel ? null : data.activeLabel);
-            } else {
-                setSelectedMunicipality(null);
-            }
-        }
-    };
-
-    const exportAggregatedDataToCSV = () => {
-        if (!selectedFileForDashboard) {
-            showToast("Nenhum arquivo selecionado para exportar.", "error");
-            return;
-        }
-        setIsLoading(true); showToast("Gerando CSV dos dados agregados...", "info");
-        try {
-            const dataToExport: (string | number | null)[][] = [
-                ["KPI", "Valor", "Unidade/Observação"],
-                ["Perda Total Estimada (Último Período)", kpis.perdaTotalEstimada, "m³"],
-                ["Variação da Perda vs Mês Anterior", kpis.variacaoPerdaMesAnterior.toFixed(2), "%"],
-                ["Eficiência de Arrecadação Média (Último Período)", kpis.eficienciaArrecadacao.toFixed(2), "%"],
-                ["Municípios Críticos (Último Período)", kpis.municipiosCriticos, ""],
-                ["Volume Distribuído Acumulado (Total do Arquivo)", kpis.volumeDistribuidoTotal, "m³"],
-                [],
-                ["Balanço de Volumes por Município (Último Período Disponível no Arquivo Selecionado)"],
-                ["Município", "Mês/Ano Referência", "Volume Distribuído (m³)", "Volume Consumido (m³)", "Perda Total (m³)"],
-                ...balancoVolumesData.map(item => [item.municipio, item['Mês/Ano Referência'], item['Volume Distribuído'], item['Volume Consumido'], item['Perda Total']]),
-                [],
-                [`Evolução Temporal (${periodAggregation}) ${selectedMunicipality ? `- ${selectedMunicipality}` : '- Geral do Arquivo'}`],
-                ["Período", "Volume Distribuído (m³)", "Volume Consumido (m³)", "Perda Total (m³)"],
-            ];
-
-            evolucaoData.forEach(item => {
-                dataToExport.push([
-                    item['periodo'],
-                    item['volume_distribuido'],
-                    item['volume_consumido'],
-                    item['perda_total']
-                ]);
-            });
-
-            const csv = unparse(dataToExport as any[]);
-            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = `dados_agregados_compesa_${selectedFileForDashboard.name.replace(".csv","")}_${new Date().toISOString().split('T')[0]}.csv`;
-            link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link);
-            showToast("CSV gerado com sucesso!", "success");
-        } catch (error) { console.error("Erro ao gerar CSV:", error); showToast("Erro ao gerar CSV.", "error"); }
-        finally { setIsLoading(false); }
-    };
-    const exportReportToPDF = () => {
-        if (!selectedFileForDashboard) {
-            showToast("Nenhum arquivo selecionado para gerar relatório.", "error");
-            return;
-        }
-        setIsLoading(true); showToast("Gerando PDF do relatório...", "info");
-        try {
-            const doc = new jsPDF({ orientation: 'landscape' }); 
-            const pageWidth = doc.internal.pageSize.getWidth();
-            const pageHeight = doc.internal.pageSize.getHeight();
-            const margin = 15;
-
-            doc.setFontSize(18); doc.text("Relatório de Análise Hídrica - Compesa", pageWidth / 2, margin, { align: 'center' });
-            doc.setFontSize(10); doc.text(`Arquivo: ${selectedFileForDashboard.name} (${selectedFileForDashboard.fileCategory})`, margin, margin + 10);
-            doc.text(`Data de Referência do Arquivo: ${new Date(selectedFileForDashboard.referenceDate + 'T00:00:00').toLocaleDateString()}`, margin, margin + 15);
-            doc.text(`Relatório Gerado em: ${new Date().toLocaleDateString()}`, pageWidth - margin, margin + 10, { align: 'right' });
-            if (selectedMunicipality) doc.text(`Filtro Município (Evolução): ${selectedMunicipality}`, pageWidth - margin, margin + 15, { align: 'right' });
-
-
-            let currentY = margin + 30;
-            doc.setFontSize(14); doc.text("Indicadores Chave de Desempenho (KPIs)", margin, currentY); currentY += 7;
-            (jsPDF as any).autoTable(doc, {
-                startY: currentY,
-                head: [['Indicador', 'Valor', 'Obs/Unidade']],
-                body: [
-                    ["Perda Total Estimada (Último Período)", kpis.perdaTotalEstimada.toLocaleString('pt-BR', {maximumFractionDigits:2}) , "m³"],
-                    ["Variação da Perda vs Mês Anterior", `${kpis.variacaoPerdaMesAnterior.toFixed(2)}%` , kpis.variacaoPerdaMesAnterior > 0 ? "Aumento" : (kpis.variacaoPerdaMesAnterior < 0 ? "Redução" : "Estável") ],
-                    ["Eficiência de Arrecadação Média (Último Período)", `${kpis.eficienciaArrecadacao.toFixed(2)}%` , ""],
-                    ["Municípios Críticos (Último Período)", kpis.municipiosCriticos, ""],
-                    ["Volume Distribuído Acumulado (Total do Arquivo)", kpis.volumeDistribuidoTotal.toLocaleString('pt-BR', {maximumFractionDigits:2}), "m³"]
-                ],
-                theme: 'striped', headStyles: { fillColor: [22, 160, 133] }, margin: { left: margin, right: margin }
-            });
-            currentY = (doc as any).lastAutoTable.finalY + 10;
-
-            if (currentY > pageHeight - 40) { doc.addPage(); currentY = margin; }
-            doc.setFontSize(14); doc.text("Balanço dos Volumes por Município (Último Período Disponível)", margin, currentY); currentY += 7;
-            (jsPDF as any).autoTable(doc, {
-                startY: currentY,
-                head: [['Município', 'Mês/Ano Ref.', 'Vol. Dist. (m³)', 'Vol. Cons. (m³)', 'Perda Total (m³)']],
-                body: balancoVolumesData.map(item => [
-                    item.municipio,
-                    item['Mês/Ano Referência'],
-                    item['Volume Distribuído'].toLocaleString('pt-BR', {maximumFractionDigits:2}),
-                    item['Volume Consumido'].toLocaleString('pt-BR', {maximumFractionDigits:2}),
-                    item['Perda Total'].toLocaleString('pt-BR', {maximumFractionDigits:2})
-                ]),
-                theme: 'grid', headStyles: { fillColor: [41, 128, 185] }, margin: { left: margin, right: margin },
-                tableWidth: 'auto'
-            });
-            currentY = (doc as any).lastAutoTable.finalY + 10;
-            
-            if (currentY > pageHeight - 40) { doc.addPage(); currentY = margin; }
-            doc.setFontSize(14); doc.text(`Evolução Temporal (${periodAggregation}) ${selectedMunicipality ? `- ${selectedMunicipality}` : '- Geral do Arquivo'}`, margin, currentY); currentY += 7;
-            (jsPDF as any).autoTable(doc, {
-                startY: currentY,
-                head: [['Período', 'Vol. Dist. (m³)', 'Vol. Cons. (m³)', 'Perda Total (m³)']],
-                body: evolucaoData.map(item => [
-                    item['periodo'],
-                    item['volume_distribuido'].toLocaleString('pt-BR', {maximumFractionDigits:2}),
-                    item['volume_consumido'].toLocaleString('pt-BR', {maximumFractionDigits:2}),
-                    item['perda_total'].toLocaleString('pt-BR', {maximumFractionDigits:2})
-                ]),
-                theme: 'grid', headStyles: { fillColor: [243, 156, 18] }, margin: { left: margin, right: margin }
-            });
-
-            doc.save(`relatorio_compesa_${selectedFileForDashboard.name.replace(".csv","")}_${new Date().toISOString().split('T')[0]}.pdf`);
-            showToast("PDF gerado com sucesso!", "success");
-        } catch (error) { console.error("Erro ao gerar PDF:", error); showToast("Erro ao gerar PDF.", "error"); }
-        finally { setIsLoading(false); }
-    };
-    const chartColorsConfig = { distribuido: "#3b82f6", consumido: "#10b981", perda: "#ef4444", defaultText: "#4b5563" };
-
-    const barChartCustomTooltip = ({ active, payload, label }: any) => {
-        if (active && payload && payload.length) {
-            return (
-            <div className="bg-white p-2 shadow-lg rounded-md border border-gray-200">
-                <p className="label text-sm font-semibold text-gray-700">{`${label}`}</p>
-                {payload.map((pld: any, index: number) => (
-                <div key={index} style={{ color: pld.fill }}>
-                    <span className="text-xs">{pld.name}: </span>
-                    <span className="text-xs font-medium">{typeof pld.value === 'number' ? pld.value.toLocaleString('pt-BR', {minimumFractionDigits:0, maximumFractionDigits:0}) : pld.value} m³</span>
-                </div>
-                ))}
-            </div>
-            );
-        }
-        return null;
-    };
-
-    const handleDashboardFileSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const fileId = event.target.value;
-        if (fileId) {
-            const file = importedFiles.find(f => f.id === fileId);
-            if (file) {
-                globalSetSelectedFileForDashboard(file);
-                setSelectedFileForPlanilha(file);
-                showToast(`Arquivo "${file.name}" selecionado para análise.`, 'info');
-            }
-        } else {
-            globalSetSelectedFileForDashboard(null);
-            setSelectedFileForPlanilha(null);
-        }
-    };
-
-    return (
-        <div className="p-4 md:p-6 space-y-6 bg-gray-50 min-h-[calc(100vh-64px)]">
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Dashboard de Análise Hídrica</h1>
-                <div className="flex gap-2 flex-wrap justify-center sm:justify-end items-center">
-                    {importedFiles.length > 0 && (
-                            <div className="flex items-center">
-                                <label htmlFor="dashboard-file-select" className="text-sm mr-2 text-gray-700 whitespace-nowrap">Analisar Arquivo:</label>
-                                <select
-                                    id="dashboard-file-select"
-                                    value={selectedFileForDashboard?.id || ""}
-                                    onChange={handleDashboardFileSelect}
-                                    className="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm bg-white max-w-[200px] sm:max-w-xs"
-                                >
-                                    <option value="">-- Selecione um Arquivo --</option>
-                                    {importedFiles.map(file => (
-                                        <option key={file.id} value={file.id}>
-                                            {file.name} ({file.fileCategory})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                    )}
-                    <button onClick={() => setIsImportModalOpen(true)} className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:shadow-lg transition duration-150 ease-in-out flex items-center">
-                        <UploadCloud size={20} className="mr-2" /> Importar CSV
-                    </button>
-                    <Menu as="div" className="relative inline-block text-left">
-                        <Menu.Button className="inline-flex justify-center w-full rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-indigo-500 disabled:opacity-50" disabled={!selectedFileForDashboard}>
-                            <Download size={20} className="mr-2" /> Exportar
-                            <ChevronDown className="-mr-1 ml-2 h-5 w-5" aria-hidden="true" />
-                        </Menu.Button>
-                        <Menu.Items className="origin-top-right absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-50">
-                            <div className="py-1">
-                                <Menu.Item onClick={exportAggregatedDataToCSV} disabled={!selectedFileForDashboard} className="group flex rounded-md items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-400">{({ active, disabled }) => (<button className={`${active && !disabled ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} w-full text-left flex items-center disabled:text-gray-400 disabled:cursor-not-allowed`} disabled={disabled}><FileText size={18} className="mr-3 text-green-500" />Dados Agregados (CSV)</button>)}</Menu.Item>
-                                <Menu.Item onClick={exportReportToPDF} disabled={!selectedFileForDashboard} className="group flex rounded-md items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900 disabled:text-gray-400">{({ active, disabled }) => (<button className={`${active && !disabled ? 'bg-gray-100 text-gray-900' : 'text-gray-700'} w-full text-left flex items-center disabled:text-gray-400 disabled:cursor-not-allowed`} disabled={disabled}><FileText size={18} className="mr-3 text-red-500" />Relatório (PDF)</button>)}</Menu.Item>
-                            </div>
-                        </Menu.Items>
-                    </Menu>
-                </div>
-            </div>
-            {selectedFileForDashboard && (
-                <div className="p-3 bg-blue-100 border border-blue-300 rounded-md text-sm text-blue-700 flex flex-col sm:flex-row justify-between items-center gap-2">
-                    <span>Analisando: <strong>{selectedFileForDashboard.name}</strong> ({selectedFileForDashboard.fileCategory}) - Ref: {new Date(selectedFileForDashboard.referenceDate + 'T00:00:00').toLocaleDateString()}</span>
-                    <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
-                        {uniqueMunicipalities.length > 0 && (
-                            <div className="flex items-center">
-                                <label htmlFor="municipio-filter" className="text-xs mr-1 sm:mr-2 whitespace-nowrap">Filtrar Município:</label>
-                                <select 
-                                    id="municipio-filter"
-                                    value={selectedMunicipality || ""} 
-                                    onChange={(e) => setSelectedMunicipality(e.target.value || null)}
-                                    className="p-1 border border-blue-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500 bg-white max-w-[150px]"
-                                >
-                                    <option value="">Todos</option>
-                                    {uniqueMunicipalities.map(muni => <option key={muni} value={muni}>{muni}</option>)}
-                                </select>
-                            </div>
-                        )}
-                        <div className="flex items-center">
-                            <label htmlFor="period-aggregation" className="text-xs mr-1 sm:mr-2 whitespace-nowrap">Agregar Evolução por:</label>
-                            <select
-                                id="period-aggregation"
-                                value={periodAggregation}
-                                onChange={(e) => setPeriodAggregation(e.target.value as PeriodAggregation)}
-                                className="p-1 border border-blue-300 rounded-md text-xs focus:ring-blue-500 focus:border-blue-500 bg-white"
-                            >
-                                <option value="Diário">Diário</option>
-                                <option value="Semanal">Semanal</option>
-                                <option value="Mensal">Mensal</option>
-                                <option value="Anual">Anual</option>
-                            </select>
+      <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6 ${!activeFileId ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="lg:col-span-7 space-y-6">
+            <Card className="border-0 shadow-sm h-[500px]">
+              <CardHeader className="border-b p-4">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-[#003F9C]">Perda Anual</CardTitle>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-2" disabled={!activeFileId}><Filter className="h-4 w-4" />Filtros</Button></DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-64 p-4">
+                      <div className="space-y-4">
+                        <div>
+                          <Label className="block mb-2">Ordenar por</Label>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="outline" className="w-full justify-between">{sortOptionPerda === 'a-z' && 'A-Z'}{sortOptionPerda === 'z-a' && 'Z-A'}{sortOptionPerda === 'crescente' && 'Crescente'}{sortOptionPerda === 'decrescente' && 'Decrescente'}<ChevronDown className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => setSortOptionPerda('a-z')}>A-Z</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setSortOptionPerda('z-a')}>Z-A</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setSortOptionPerda('crescente')}>Crescente</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => setSortOptionPerda('decrescente')}>Decrescente</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                    </div>
+                        <div>
+                          <Label className="block mb-2">Faixa de valores</Label>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Input type="number" value={perdaRange[0]} onChange={(e) => setPerdaRange([Number(e.target.value), perdaRange[1]])} min={0} max={maxPerda} className="w-20" />
+                            <span>a</span>
+                            <Input type="number" value={perdaRange[1]} onChange={(e) => setPerdaRange([perdaRange[0], Number(e.target.value)])} min={0} max={maxPerda} className="w-20" />
+                          </div>
+                          <Slider value={perdaRange as number[]} onValueChange={handleSliderChange(setPerdaRange)} min={0} max={maxPerda} step={100} />
+                        </div>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <KPICard title="Perda Total (Últ. Período)" value={kpis.perdaTotalEstimada} unit="m³" icon={<TrendingDown size={24} className="text-red-500" />} helpText="Soma das perdas totais do último período de referência no arquivo."/>
-                <KPICard title="Variação Perda" value={kpis.variacaoPerdaMesAnterior} unit="%" icon={<CalendarDays size={24} className={kpis.variacaoPerdaMesAnterior > 0 ? "text-red-500" : (kpis.variacaoPerdaMesAnterior < 0 ? "text-green-500 transform rotate-180" : "text-gray-500")}/>} helpText="Variação percentual da perda total do último período em relação ao penúltimo."/>
-                <KPICard title="Efic. Arrecadação (Últ. Período)" value={kpis.eficienciaArrecadacao} unit="%" icon={<Droplets size={24} className="text-teal-500" />} helpText="Média da Eficiência de Arrecadação (EAD) do último período. Requer coluna 'ead'."/>
-                <KPICard title="Municípios Críticos (Últ. Período)" value={kpis.municipiosCriticos} icon={<AlertCircle size={24} className="text-yellow-500" />} helpText="Número de municípios com status de perda diferente de 'Normal', 'Bom' ou 'Regular' no último período. Requer coluna 'status_perda'."/>
-                <KPICard title="Vol. Distribuído (Total Arquivo)" value={kpis.volumeDistribuidoTotal} unit="m³" icon={<LayoutDashboard size={24} className="text-blue-500" />} helpText="Soma de todo o volume distribuído presente no arquivo."/>
-            </div>
+              </CardHeader>
+              <CardContent className="p-4 h-[calc(100%-65px)]">
+                <div className="w-full h-full overflow-x-auto" style={{ overflowY: 'hidden' }}>
+                  <div style={{ width: `${Math.max(processedPerdaData.length * 60, 300)}px`, height: '400px' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={processedPerdaData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }} barSize={Math.min(30, (processedPerdaData.length > 0 ? ( ( (processedPerdaData.length * 60) * 0.8 ) / processedPerdaData.length ) : 30) )}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12 }} interval={0} />
+                        <YAxis width={80} />
+                        <Tooltip formatter={(value: number | string | Array<number | string>, name: string) => typeof value === 'number' ? (name === 'value' ? [`${value.toLocaleString('pt-BR')}`, 'Perda Anual'] : [`${value.toLocaleString('pt-BR')}`, name]) : [String(value), name]} contentStyle={{ backgroundColor: 'white', borderColor: compesaColors.tertiary, borderRadius: '0.5rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="value" fill={compesaColors.primary} radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm h-[500px]">
+              <CardHeader className="border-b p-4">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-[#003F9C]">Perdas por Município</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 h-[calc(100%-65px)]">
+                  <div className="w-full h-full overflow-x-auto" style={{ overflowY: 'hidden' }}>
+                      <div style={{ width: `${Math.max(processedPerdasData.length * 90, 400)}px`, height: '400px' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={processedPerdasData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12 }} interval={0} />
+                                  <YAxis width={80} />
+                                  <Tooltip formatter={(value: number | string | Array<number | string>, name: string) => typeof value === 'number' ? [`${value.toLocaleString('pt-BR')}`, name] : [String(value), name]} contentStyle={{ backgroundColor: 'white', borderColor: compesaColors.tertiary, borderRadius: '0.5rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+                                  <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                  <Bar dataKey="manutencao" fill={compesaColors.primary} name="Manutenção" radius={[4, 4, 0, 0]} barSize={Math.min(20, processedPerdasData.length > 0 ? 20 : 15 )} />
+                                  <Bar dataKey="faltaAgua" fill={compesaColors.secondary} name="Falta de Água" radius={[4, 4, 0, 0]} barSize={Math.min(20, processedPerdasData.length > 0 ? 20 : 15 )} />
+                                  <Bar dataKey="semAcesso" fill={compesaColors.tertiary} name="Sem Acesso" radius={[4, 4, 0, 0]} barSize={Math.min(20, processedPerdasData.length > 0 ? 20 : 15 )} />
+                              </BarChart>
+                          </ResponsiveContainer>
+                      </div>
+                  </div>
+              </CardContent>
+            </Card>
+        </div>
+        <div className="lg:col-span-5 space-y-6">
+          <Card className="border-0 shadow-sm h-[500px]">
+            <CardHeader className="border-b p-4"><CardTitle className="text-[#003F9C]">Gastos Municipais</CardTitle></CardHeader>
+            <CardContent className="p-4 h-[calc(100%-65px)] overflow-y-auto"></CardContent>
+          </Card>
+          <Card className="border-0 shadow-sm h-[500px]">
+            <CardHeader className="border-b p-4"><CardTitle className="text-[#003F9C]">Volume Produzido (m³/h)</CardTitle></CardHeader>
+            <CardContent className="p-4 h-[calc(100%-65px)]"></CardContent>
+          </Card>
+        </div>
+      </div>
 
-            <div className="bg-white p-4 rounded-lg shadow">
-                <h2 className="text-xl font-semibold text-gray-700 mb-1 flex items-center"><BarChart3Icon size={22} className="mr-2 text-blue-600" />Balanço dos Volumes por Município (Último Período do Arquivo)</h2>
-                <p className="text-sm text-gray-500 mb-4">Clique em uma barra de município para filtrar os gráficos de evolução abaixo. Clique novamente para limpar o filtro.</p>
-                {balancoVolumesData.length > 0 && balancoVolumesData[0].municipio !== 'N/A' ? (
-                    <div className="h-96 w-full">
+      <div className={`grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6 ${!activeFileId ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="lg:col-span-12">
+          <Card className="border-0 shadow-sm h-[500px]">
+            <CardHeader className="border-b p-4">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-[#003F9C]">Balanço dos Volumes Acumulado (m³)</CardTitle>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="gap-2" disabled={!activeFileId}><Filter className="h-4 w-4" />Filtros</Button></DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-72 p-4">
+                    <div className="space-y-4">
+                      <div>
+                        <Label className="block mb-2">Ordenar por</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {sortOptionBalanco === 'a-z' && 'Município A-Z'}
+                              {sortOptionBalanco === 'z-a' && 'Município Z-A'}
+                              {sortOptionBalanco === 'crescente' && `Valor Crescente (${sortKeyBalanco})`}
+                              {sortOptionBalanco === 'decrescente' && `Valor Decrescente (${sortKeyBalanco})`}
+                              <ChevronDown className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('a-z'); setSortKeyBalanco('name');}}>Município A-Z</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('z-a'); setSortKeyBalanco('name');}}>Município Z-A</DropdownMenuItem>
+                            <DropdownMenuLabel>Por Volume Distribuído</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('crescente'); setSortKeyBalanco('distribuido');}}>Crescente</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('decrescente'); setSortKeyBalanco('distribuido');}}>Decrescente</DropdownMenuItem>
+                            <DropdownMenuLabel>Por Volume Consumido</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('crescente'); setSortKeyBalanco('consumido');}}>Crescente</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('decrescente'); setSortKeyBalanco('consumido');}}>Decrescente</DropdownMenuItem>
+                            <DropdownMenuLabel>Por Volume de Perda</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('crescente'); setSortKeyBalanco('perdaVolume');}}>Crescente</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setSortOptionBalanco('decrescente'); setSortKeyBalanco('perdaVolume');}}>Decrescente</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div>
+                        <Label className="block mb-2">Filtrar por valor de:</Label>
+                         <DropdownMenu>
+                            <DropdownMenuTrigger asChild><Button variant="outline" className="w-full justify-between capitalize">{filterKeyBalanco.replace('perdaVolume', 'Perda de Volume')}<ChevronDown className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                                <DropdownMenuItem onClick={() => setFilterKeyBalanco('distribuido')}>Distribuído</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setFilterKeyBalanco('consumido')}>Consumido</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => setFilterKeyBalanco('perdaVolume')}>Perda de Volume</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div>
+                        <Label className="block mb-2">Faixa de valores (m³)</Label>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Input type="number" value={balancoRange[0]} onChange={(e) => setBalancoRange([Number(e.target.value), balancoRange[1]])} min={0} max={maxBalanco} className="w-20" />
+                          <span>a</span>
+                          <Input type="number" value={balancoRange[1]} onChange={(e) => setBalancoRange([balancoRange[0], Number(e.target.value)])} min={0} max={maxBalanco} className="w-20" />
+                        </div>
+                        <Slider value={balancoRange as number[]} onValueChange={handleSliderChange(setBalancoRange)} min={0} max={maxBalanco} step={100} />
+                      </div>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 h-[calc(100%-65px)]">
+              <div className="w-full h-full overflow-x-auto" style={{ overflowY: 'hidden' }}>
+                <div style={{ width: `${Math.max(processedBalancoData.length * 100, 400)}px`, height: '400px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={processedBalancoData} margin={{ top: 20, right: 30, left: 20, bottom: 100 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                      <XAxis dataKey="name" angle={-45} textAnchor="end" height={100} tick={{ fontSize: 12 }} interval={0} />
+                      <YAxis width={80} />
+                      <Tooltip formatter={(value: number) => [`${value.toLocaleString('pt-BR')} m³`]} contentStyle={{ backgroundColor: 'white', borderColor: compesaColors.tertiary, borderRadius: '0.5rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}/>
+                      <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                      <Bar dataKey="distribuido" fill={compesaColors.primary} name="Volume Distribuído" radius={[4, 4, 0, 0]} barSize={20} />
+                      <Bar dataKey="consumido" fill={compesaColors.secondary} name="Volume Consumido" radius={[4, 4, 0, 0]} barSize={20} />
+                      <Bar dataKey="perdaVolume" fill={compesaColors.red} name="Volume de Perda" radius={[4, 4, 0, 0]} barSize={20} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      
+      <div className={`mb-6 p-4 bg-white rounded-lg shadow-sm ${!activeFileId ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+            <h3 className="text-lg font-semibold text-[#003F9C]">
+                Evolução dos Volumes {selectedMunicipioEvolucao !== 'COMPESA' ? `(${selectedMunicipioEvolucao})` : '(COMPESA)'}
+            </h3>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full sm:w-auto min-w-[200px] justify-between border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10" disabled={!activeFileId}>
+                        {selectedMunicipioEvolucao === 'COMPESA' ? 'COMPESA' : selectedMunicipioEvolucao}
+                        <ChevronDown className="h-4 w-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56 max-h-60 overflow-y-auto">
+                    <DropdownMenuRadioGroup value={selectedMunicipioEvolucao} onValueChange={setSelectedMunicipioEvolucao}>
+                        <DropdownMenuRadioItem value="COMPESA">COMPESA (Agregado)</DropdownMenuRadioItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Municípios</DropdownMenuLabel>
+                        {municipiosListEvolucao.map(municipio => (
+                            <DropdownMenuRadioItem key={municipio} value={municipio}>
+                                {municipio}
+                            </DropdownMenuRadioItem>
+                        ))}
+                    </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+            Nota: Os gráficos de evolução abaixo mostram o valor total do período do CSV carregado, repetido para cada mês (simulando uma linha). Para uma evolução mensal real, o CSV precisa conter dados mensais.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+                { title: "Evolução Volume Distribuído (m³)", data: evolucaoDistribuidoData, color: compesaColors.primary, dataKey: "value" },
+                { title: "Evolução Volume Consumido (m³)", data: evolucaoConsumidoData, color: compesaColors.secondary, dataKey: "value" },
+                { title: "Evolução Volume Perdido (m³)", data: evolucaoPerdidoData, color: compesaColors.red, dataKey: "value" },
+            ].map(chart => (
+                <Card key={chart.title} className="border-0 shadow-sm h-[400px]">
+                    <CardHeader className="border-b p-4">
+                        <CardTitle className="text-md text-[#1A2C56]">{chart.title}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 h-[calc(100%-57px)]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={balancoVolumesData} onClick={handleBarClick} margin={{ top: 5, right: 20, left: 0, bottom: uniqueMunicipalities.length > 10 ? 100 : 60 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                <XAxis dataKey="municipio" angle={uniqueMunicipalities.length > 10 ? -60 : -45} textAnchor="end" height={uniqueMunicipalities.length > 10 ? 110 : 80} interval={0} stroke={chartColorsConfig.defaultText} fontSize={10}/>
-                                <YAxis stroke={chartColorsConfig.defaultText} fontSize={10} tickFormatter={(value) => typeof value === 'number' ? value.toLocaleString('pt-BR', {notation:'compact'}) : String(value)} />
-                                <Tooltip content={barChartCustomTooltip} />
-                                <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} iconSize={10}/>
-                                <Bar dataKey="Volume Distribuído" radius={[4, 4, 0, 0]} minPointSize={2} name="Vol. Dist.">
-                                    {balancoVolumesData.map((entry, index) => (
-                                        <Cell key={`cell-dist-${index}`} cursor="pointer" fill={entry.municipio === selectedMunicipality ? '#1e40af' : chartColorsConfig.distribuido} />
-                                    ))}
-                                </Bar>
-                                <Bar dataKey="Volume Consumido" fill={chartColorsConfig.consumido} radius={[4, 4, 0, 0]} minPointSize={2} name="Vol. Cons." />
-                                <Bar dataKey="Perda Total" fill={chartColorsConfig.perda} radius={[4, 4, 0, 0]} minPointSize={2} name="Perda" />
-                            </BarChart>
+                            <LineChart data={chart.data} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="month" />
+                                <YAxis width={70} tickFormatter={(value) => value.toLocaleString('pt-BR')} />
+                                <Tooltip formatter={(value: number) => [`${value.toLocaleString('pt-BR')} m³`]} />
+                                <Line type="monotone" dataKey={chart.dataKey} stroke={chart.color} strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} name={chart.title.split('(')[0].trim()} />
+                            </LineChart>
                         </ResponsiveContainer>
-                    </div>
-                ) : (
-                        <div className="text-center py-8 text-gray-500 h-96 flex flex-col justify-center items-center">
-                            <BarChart3Icon size={48} className="mx-auto mb-2" />
-                            {selectedFileForDashboard ? "Não há dados de balanço para o último período ou colunas não encontradas." : "Selecione um arquivo."}
-                        </div>
-                )}
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                { evolucaoData.length > 1 || (evolucaoData.length > 0 && evolucaoData[0].periodo !== 'N/A') ? (
-                    <>
-                        <EvolutionChartComponent title={`Volume Distribuído (${periodAggregation})`} data={evolucaoData} dataKey="volume_distribuido" color={chartColorsConfig.distribuido} yAxisLabel="Volume (m³)" />
-                        <EvolutionChartComponent title={`Volume Consumido (${periodAggregation})`} data={evolucaoData} dataKey="volume_consumido" color={chartColorsConfig.consumido} yAxisLabel="Volume (m³)" />
-                        <EvolutionChartComponent title={`Perda Total (${periodAggregation})`} data={evolucaoData} dataKey="perda_total" color={chartColorsConfig.perda} yAxisLabel="Volume (m³)" />
-                    </>
-                ) : (
-                        <div className="lg:col-span-3 text-center py-8 text-gray-500 bg-white p-4 rounded-lg shadow h-80 flex flex-col justify-center items-center">
-                            <LineChartIconLucide size={48} className="mx-auto mb-2" />
-                            {selectedFileForDashboard ? "Dados insuficientes ou não encontrados para exibir a evolução temporal com os filtros atuais." : "Selecione um arquivo para ver a evolução."}
-                        </div>
-                )}
-            </div>
-            <ImportCSVModal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} />
+                    </CardContent>
+                </Card>
+            ))}
         </div>
-    );
+      </div>
+    </main>
+  );
 };
-export default DashboardPage;
