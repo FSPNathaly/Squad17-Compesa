@@ -7,8 +7,8 @@ interface HomeProps {
 }
 
 export const Home = ({ onLogin }: HomeProps) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -21,7 +21,7 @@ export const Home = ({ onLogin }: HomeProps) => {
 
   return (
     <main className="flex items-center justify-center min-h-screen bg-[#F0F5FF] p-4">
-      <form 
+      <form
         onSubmit={handleSubmit}
         className="bg-white rounded-lg shadow-lg p-8 w-full max-w-md flex flex-col items-center gap-6"
       >

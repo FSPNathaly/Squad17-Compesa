@@ -1,7 +1,7 @@
 import { ptBR } from "date-fns/locale";
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { Dispatch, SetStateAction, ReactElement } from "react";
-import * as Papa from "papaparse";
+import Papa, { type ParseResult, type ParseError } from "papaparse";
 import { jsPDF } from "jspdf";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import {
   LineChart,
   Line,
 } from "recharts";
+import type { TooltipProps } from "recharts";
 import {
   Popover,
   PopoverContent,
@@ -51,6 +52,7 @@ import { Calendar as CalendarComp } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import type {
   ImportedFileEntry,
   CsvData as AppCsvData,
@@ -91,58 +93,32 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-const Slider = ({
-  value,
-  onValueChange,
-  min,
-  max,
-  step = 100,
-  className = "",
-}: {
-  value: number[];
-  onValueChange: (value: number[]) => void;
-  min: number;
-  max: number;
-  step?: number;
-  className?: string;
-}) => {
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
-    index: number
-  ) => {
-    const newValue = [...value];
-    newValue[index] = Number(e.target.value);
-    onValueChange(newValue);
-  };
+interface CustomTooltipPayload {
+  name: string;
+  value: any;
+  color?: string;
+}
 
-  return (
-    <div className={`w-full ${className}`}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-600">{value[0]}</span>
-        <span className="text-sm text-gray-600">{value[1]}</span>
+interface CustomTooltipProps extends TooltipProps<any, any> {
+  payload?: CustomTooltipPayload[];
+}
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="custom-tooltip bg-white p-2 border border-gray-200 rounded shadow-lg text-sm">
+        <p className="label font-bold text-gray-800">{`${label}`}</p>
+        {payload.map((pld, index) => (
+          <div key={index} style={{ color: pld.color }}>
+            <p className="intro">{`${pld.name}: ${Number(
+              pld.value
+            ).toLocaleString("pt-BR")}`}</p>
+          </div>
+        ))}
       </div>
-      <div className="flex items-center gap-4">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value[0]}
-          onChange={(e) => handleChange(e, 0)}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-        />
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value[1]}
-          onChange={(e) => handleChange(e, 1)}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-        />
-      </div>
-    </div>
-  );
+    );
+  }
+  return null;
 };
 
 function sortData<T extends { name: string }>(
@@ -249,7 +225,6 @@ export const Dashboard = ({
   const [sortOptionPerda, setSortOptionPerda] = useState<string>("decrescente");
 
   const [maxPerda, setMaxPerda] = useState<number>(10000);
-  const [maxPerdas, setMaxPerdas] = useState<number>(10000);
 
   const [perdaRange, setPerdaRange] = useState<[number, number]>([0, 10000]);
   const [perdasRange, setPerdasRange] = useState<[number, number]>([0, 10000]);
@@ -277,6 +252,14 @@ export const Dashboard = ({
       importDate: Date,
       parsedData: CsvData[]
     ) => {
+      if (parsedData.length === 0) {
+        console.warn(
+          "CSV parsing resulted in empty data. Please check the file format."
+        );
+        setUploading(false);
+        return;
+      }
+
       const perdaAnualAcc: Record<string, number> = parsedData.reduce(
         (acc: Record<string, number>, item: CsvData) => {
           const municipio = item.Municipios;
@@ -293,7 +276,7 @@ export const Dashboard = ({
       const newGastosMunicipiosData = parsedData.map((item) => ({
         name: item.Municipios,
         manutencoes: Math.floor(parseBrazilianNumber(item.Perda) / 10000),
-        valor: parseBrazilianNumber(item.VD),
+        valor: parseBrazilianNumber(item["Volume Produzido"]),
       }));
 
       const newPerdasMunicipioData = parsedData.map((item) => ({
@@ -391,7 +374,6 @@ export const Dashboard = ({
         ...perdasMunicipioDataLocal.map((item) => item.manutencao)
       );
       const newMax = Math.ceil(maxVal / 100) * 100 || 10000;
-      setMaxPerdas(newMax);
       setPerdasRange((prevRange) =>
         (prevRange[1] === 10000 && newMax > 10000) ||
         prevRange[1] < newMax ||
@@ -400,7 +382,7 @@ export const Dashboard = ({
           : prevRange
       );
     }
-    // Lógica para maxVolume e volumeRange removida pois não há UI de filtro para eles.
+
     if (balancoVolumesDataLocal.length > 0 && isMounted) {
       const maxVal = Math.max(
         ...balancoVolumesDataLocal.map((item) =>
@@ -420,7 +402,7 @@ export const Dashboard = ({
     return () => {
       isMounted = false;
     };
-  }, [perdaAnualDataLocal, perdasMunicipioDataLocal, balancoVolumesDataLocal]); // Removido volumeTotalDataLocal das dependências
+  }, [perdaAnualDataLocal, perdasMunicipioDataLocal, balancoVolumesDataLocal]);
 
   const handleMainImportClick = () => mainFileInputRef.current?.click();
 
@@ -438,19 +420,15 @@ export const Dashboard = ({
 
       setUploading(true);
 
-      Papa.parse(file, {
+      Papa.parse(file as any, {
         header: true,
         skipEmptyLines: true,
-        complete: (results: Papa.ParseResult<CsvData>) => {
+        complete: (results: ParseResult<CsvData>) => {
           if (results.errors.length > 0) {
             console.error(
-              "Erros encontrados durante o parsing de linhas específicas:"
+              "Erros encontrados durante o parsing de linhas específicas:",
+              results.errors
             );
-            results.errors.forEach((parseError: Papa.ParseError) => {
-              console.error(
-                `- Mensagem: ${parseError.message}, Código: ${parseError.code}, Linha: ${parseError.row}`
-              );
-            });
           }
 
           const parsedData: CsvData[] = (results.data as CsvData[]).filter(
@@ -477,20 +455,15 @@ export const Dashboard = ({
           setUploading(false);
           if (editingFileId) setFileToEditId(null);
         },
-        error: (err: Papa.ParseError) => {
-          console.error(
-            "Erro fatal durante o parsing do CSV (callback de erro geral):"
-          );
-          console.error(
-            `- Mensagem: ${err.message}, Código: ${err.code}, Linha: ${err.row}`
-          );
+        error: (err: ParseError) => {
+          console.error("Erro fatal durante o parsing do CSV:", err.message);
           setUploading(false);
           if (editingFileId) setFileToEditId(null);
         },
       });
       if (event.target) event.target.value = "";
     },
-    [importedFilesHistory, processAndStoreFileData, parseBrazilianNumber]
+    [importedFilesHistory, processAndStoreFileData]
   );
 
   useEffect(() => {
@@ -629,16 +602,12 @@ export const Dashboard = ({
     perdasRange,
     "manutencao"
   );
-
   const processedBalancoData = filterByRange(
     sortData(balancoVolumesDataLocal, sortOptionBalanco, sortKeyBalanco),
     balancoRange,
     filterKeyBalanco
   );
 
-  // O JSX continua aqui abaixo, sem alterações da última versão que forneci,
-  // pois os problemas principais estavam na lógica e nos tipos.
-  // As implementações placeholder para os cards "Gastos Municipais" e "Volume Produzido" já estão lá.
   return (
     <main className="min-h-screen bg-[#F0F5FF] p-4">
       <header className="flex justify-between items-center mb-8 bg-white p-4 rounded-lg shadow-sm">
@@ -793,7 +762,6 @@ export const Dashboard = ({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
           <Button
             variant="outline"
             className="gap-1 sm:gap-2 border-[#003F9C] text-[#003F9C] hover:bg-[#003F9C]/10 text-xs sm:text-sm px-2 sm:px-3"
@@ -802,7 +770,6 @@ export const Dashboard = ({
           >
             <Sheet className="h-3 w-3 sm:h-4 sm:w-4" /> Planilha
           </Button>
-
           <DropdownMenu onOpenChange={setExportDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <Button
@@ -1016,7 +983,7 @@ export const Dashboard = ({
                           />
                         </div>
                         <Slider
-                          value={perdaRange}
+                          defaultValue={perdaRange}
                           onValueChange={handleSliderChange(setPerdaRange)}
                           min={0}
                           max={maxPerda}
@@ -1061,29 +1028,10 @@ export const Dashboard = ({
                         interval={0}
                       />
                       <YAxis width={80} />
-                      <Tooltip
-                        formatter={(
-                          value: number | string | Array<number | string>,
-                          name: string
-                        ) =>
-                          typeof value === "number"
-                            ? name === "value"
-                              ? [
-                                  `${value.toLocaleString("pt-BR")}`,
-                                  "Perda Anual",
-                                ]
-                              : [`${value.toLocaleString("pt-BR")}`, name]
-                            : [String(value), name]
-                        }
-                        contentStyle={{
-                          backgroundColor: "white",
-                          borderColor: compesaColors.tertiary,
-                          borderRadius: "0.5rem",
-                          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                        }}
-                      />
+                      <Tooltip content={<CustomTooltip />} />
                       <Bar
                         dataKey="value"
+                        name="Perda Anual"
                         fill={compesaColors.primary}
                         radius={[4, 4, 0, 0]}
                       />
@@ -1130,22 +1078,7 @@ export const Dashboard = ({
                         interval={0}
                       />
                       <YAxis width={80} />
-                      <Tooltip
-                        formatter={(
-                          value: number | string | Array<number | string>,
-                          name: string
-                        ) =>
-                          typeof value === "number"
-                            ? [`${value.toLocaleString("pt-BR")}`, name]
-                            : [String(value), name]
-                        }
-                        contentStyle={{
-                          backgroundColor: "white",
-                          borderColor: compesaColors.tertiary,
-                          borderRadius: "0.5rem",
-                          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                        }}
-                      />
+                      <Tooltip content={<CustomTooltip />} />
                       <Legend wrapperStyle={{ paddingTop: "20px" }} />
                       <Bar
                         dataKey="manutencao"
@@ -1188,7 +1121,7 @@ export const Dashboard = ({
           <Card className="border-0 shadow-sm h-[500px]">
             <CardHeader className="border-b p-4">
               <CardTitle className="text-[#003F9C]">
-                Gastos Municipais
+                Manutenções e Volume por Município
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 h-[calc(100%-65px)] overflow-y-auto text-sm">
@@ -1200,19 +1133,16 @@ export const Dashboard = ({
                       <div className="pl-2">
                         Manutenções: {item.manutencoes.toLocaleString("pt-BR")}
                         <br />
-                        Valor: R${" "}
-                        {item.valor.toLocaleString("pt-BR", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        Volume Produzido: {item.valor.toLocaleString(
+                          "pt-BR"
+                        )}{" "}
+                        m³/h
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-gray-500">
-                  Nenhum dado de gastos para exibir.
-                </p>
+                <p className="text-gray-500">Nenhum dado para exibir.</p>
               )}
             </CardContent>
           </Card>
@@ -1436,7 +1366,7 @@ export const Dashboard = ({
                           />
                         </div>
                         <Slider
-                          value={balancoRange}
+                          defaultValue={balancoRange}
                           onValueChange={handleSliderChange(setBalancoRange)}
                           min={0}
                           max={maxBalanco}
@@ -1477,19 +1407,7 @@ export const Dashboard = ({
                         interval={0}
                       />
                       <YAxis width={80} />
-                      <Tooltip
-                        formatter={(value: number | string, name: string) =>
-                          typeof value === "number"
-                            ? [`${value.toLocaleString("pt-BR")} m³`, name]
-                            : [value, name]
-                        }
-                        contentStyle={{
-                          backgroundColor: "white",
-                          borderColor: compesaColors.tertiary,
-                          borderRadius: "0.5rem",
-                          boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-                        }}
-                      />
+                      <Tooltip content={<CustomTooltip />} />
                       <Legend wrapperStyle={{ paddingTop: "20px" }} />
                       <Bar
                         dataKey="distribuido"
@@ -1611,13 +1529,7 @@ export const Dashboard = ({
                         value.toLocaleString("pt-BR")
                       }
                     />
-                    <Tooltip
-                      formatter={(value: number | string) =>
-                        typeof value === "number"
-                          ? `${value.toLocaleString("pt-BR")} m³`
-                          : value
-                      }
-                    />
+                    <Tooltip content={<CustomTooltip />} />
                     <Line
                       type="monotone"
                       dataKey={chart.dataKey}
