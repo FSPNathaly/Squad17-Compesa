@@ -135,7 +135,6 @@ const App: React.FC = () => {
         setImportedFilesHistory(parsedFiles);
       } catch (error) {
         console.error("Falha ao analisar arquivos armazenados:", error);
-        localStorage.removeItem("compesaDashboardFiles");
       }
     }
   }, []);
