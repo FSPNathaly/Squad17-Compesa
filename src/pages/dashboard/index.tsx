@@ -455,11 +455,6 @@ export const Dashboard = ({
           setUploading(false);
           if (editingFileId) setFileToEditId(null);
         },
-        error: (err: ParseError) => {
-          console.error("Erro fatal durante o parsing do CSV:", err.message);
-          setUploading(false);
-          if (editingFileId) setFileToEditId(null);
-        },
       });
       if (event.target) event.target.value = "";
     },

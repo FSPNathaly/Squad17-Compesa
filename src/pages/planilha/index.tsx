@@ -198,10 +198,17 @@ export const Planilha = ({
 
       setUploading(true);
 
-      Papa.parse(file, {
+      Papa.parse(file as any, {
         header: true,
         skipEmptyLines: true,
         complete: (results: ParseResult<CsvData>) => {
+          if (results.errors.length > 0) {
+            console.error(
+              "Erros no parsing do CSV na Planilha:",
+              results.errors
+            );
+          }
+
           const parsedData: CsvData[] = (results.data as CsvData[]).filter(
             (item): item is CsvData => !!(item && item.Id && item.Municipios)
           );
@@ -218,11 +225,6 @@ export const Planilha = ({
             dateToUse,
             parsedData
           );
-          setUploading(false);
-          if (editingFileId) setFileToEditId(null);
-        },
-        error: (error: ParseError) => {
-          console.error("Error processing CSV:", error.message);
           setUploading(false);
           if (editingFileId) setFileToEditId(null);
         },
