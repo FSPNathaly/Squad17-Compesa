@@ -32,8 +32,7 @@ import {
   Calendar as CalendarIcon,
 } from "lucide-react";
 import { format } from "date-fns";
-import Papa, { type ParseResult, type ParseError } from "papaparse";
-import type { ImportedFileEntry, CsvData as AppCsvData } from "../../App";
+import Papa, { type ParseResult } from "papaparse";import type { ImportedFileEntry, CsvData as AppCsvData } from "../../App";
 import { Calendar as CalendarComp } from "@/components/ui/calendar";
 import {
   Popover,
