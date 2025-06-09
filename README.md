@@ -1,43 +1,76 @@
-# 💧 Sistema de Monitoramento de Perdas de Água
+# Sistema de Monitoramento de Perdas de Água
 
-Este projeto é uma aplicação **frontend** desenvolvida com **React.js** e **TypeScript**, com o objetivo de fornecer uma interface intuitiva para que funcionários de uma empresa de distribuição de água possam **visualizar perdas hídricas** e gerar **relatórios mensais e anuais**. A aplicação visa apoiar o controle e redução de desperdícios, contribuindo para uma gestão mais eficiente dos recursos.
+**Acesse a aplicação online: [https://squad17-compesa.vercel.app/](https://squad17-compesa.vercel.app/)**
 
----
+Este projeto é uma aplicação frontend desenvolvida com React.js e TypeScript, com o objetivo de fornecer uma interface visual para colaboradores da COMPESA analisarem perdas hídricas, consumo e volume de produção de água por município.
 
-## 🚀 Tecnologias Utilizadas
+A ferramenta permite importação de arquivos CSV, visualização de gráficos e geração de relatórios.
 
-- **React.js** – Biblioteca principal para construção da interface
-- **TypeScript** – Superset do JavaScript que adiciona tipagem estática
-- **Tailwind CSS** – Estilização rápida e responsiva
-- **shadcn/ui** – Componentes UI prontos e acessíveis
-- **React Router** – Gerenciamento de rotas da aplicação
-- **Lucide Icons** – Ícones modernos e otimizados para web
+## Tecnologias Utilizadas
 
----
+- React.js
+- TypeScript
+- Tailwind CSS
+- shadcn/ui
+- Recharts
+- jsPDF
+- PapaParse
+- Vite
 
-## 📌 Funcionalidades
+## Funcionalidades
 
-- 📊 Visualização de perdas de água por período
-- 📅 Geração de relatórios mensais e anuais
-- 📈 Gráficos e indicadores de desempenho
-- 🔍 Filtro de dados por período, setor ou região (em desenvolvimento)
-- 🧩 Interface modular com componentes reutilizáveis
+- Upload de arquivos CSV com dados por município
+- Visualização de gráficos com indicadores de desempenho
+- Geração de relatórios em PDF e CSV
+- Filtros interativos por município, valor e ordenação
+- Evolução mensal dos dados por município ou total (COMPESA)
+- Tela de login simulado e navegação entre Dashboard e Planilha
 
----
+## Funcionalidades Futuras
 
-## 🧪 Em Desenvolvimento
+- Autenticação com backend
+- Armazenamento dos dados em banco
+- Suporte a múltiplos usuários
+- Integração com APIs externas
+- Alertas automáticos com base nos dados
 
-Este projeto está em fase ativa de desenvolvimento. Algumas funcionalidades estão sendo implementadas e outras ainda serão adicionadas, como:
-
-- Exportação de relatórios em PDF
-- Autenticação de usuários
-- Dashboard com KPIs customizáveis
-
----
-
-## ▶️ Como Executar o Projeto
+## Como Executar Localmente
 
 1. Clone o repositório:
 
 ```bash
-git clone https://github.com/FSPNathaly/Squad17-Compesa.git
+git clone [https://github.com/FSPNathaly/Squad17-Compesa.git](https://github.com/FSPNathaly/Squad17-Compesa.git)
+cd Squad17-Compesa
+```
+
+2. Instale as dependências:
+
+```bash
+npm install
+```
+
+3. Inicie o servidor de desenvolvimento:
+
+```bash
+npm run dev
+```
+
+4. Acesse a aplicação no navegador:
+
+```
+http://localhost:5173
+```
+
+## Observações
+
+- O login é simulado, qualquer usuário e senha funcionam.
+- Os arquivos CSV devem conter as seguintes colunas:
+
+```
+Id, Municipios, VD, Perda, IPD, Volume Produzido, Volume Consumido
+```
+
+## Desenvolvido por
+
+Squad 17 – Projeto COMPESA
+
